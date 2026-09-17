@@ -1,57 +1,77 @@
+-- Matches the D1 schema already created in Cloudflare for global-discovery.
+
 CREATE TABLE IF NOT EXISTS sources (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  url TEXT NOT NULL,
-  feed_url TEXT,
-  language TEXT,
-  region TEXT,
-  source_type TEXT DEFAULT 'media',
-  reliability REAL DEFAULT 0.5,
-  discovery_value REAL DEFAULT 0.5,
-  originality REAL DEFAULT 0.5,
-  locality REAL DEFAULT 0.5,
-  depth REAL DEFAULT 0.5,
-  specialization REAL DEFAULT 0.5,
-  active INTEGER DEFAULT 1,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  last_seen_at TEXT
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    base_url TEXT,
+    feed_url TEXT,
+    language TEXT,
+    country TEXT,
+    region TEXT,
+    source_type TEXT,
+    reliability REAL DEFAULT 0.5,
+    discovery_value REAL DEFAULT 0.5,
+    originality REAL DEFAULT 0.5,
+    locality REAL DEFAULT 0.5,
+    depth REAL DEFAULT 0.5,
+    specialization REAL DEFAULT 0.5,
+    status TEXT DEFAULT 'active',
+    first_seen_at TEXT,
+    last_seen_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS articles (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  source_id INTEGER NOT NULL,
-  url TEXT NOT NULL UNIQUE,
-  canonical_url TEXT,
-  title TEXT NOT NULL,
-  author TEXT,
-  language TEXT,
-  published_at TEXT,
-  fetched_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  excerpt TEXT,
-  content TEXT,
-  content_hash TEXT,
-  processing_state TEXT DEFAULT 'COLLECTED',
-  FOREIGN KEY(source_id) REFERENCES sources(id)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    canonical_url TEXT,
+    author TEXT,
+    language TEXT,
+    country TEXT,
+    published_at TEXT,
+    fetched_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    excerpt TEXT,
+    raw_content TEXT,
+    content_hash TEXT,
+    processing_state TEXT DEFAULT 'collected',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (source_id) REFERENCES sources(id)
 );
 
 CREATE TABLE IF NOT EXISTS stories (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  summary TEXT,
-  topic TEXT,
-  state TEXT DEFAULT 'CANDIDATE',
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    summary TEXT,
+    topic TEXT,
+    status TEXT DEFAULT 'candidate',
+    first_seen_at TEXT,
+    last_updated_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS article_stories (
-  article_id INTEGER NOT NULL,
-  story_id INTEGER NOT NULL,
-  PRIMARY KEY(article_id, story_id),
-  FOREIGN KEY(article_id) REFERENCES articles(id),
-  FOREIGN KEY(story_id) REFERENCES stories(id)
+    article_id INTEGER NOT NULL,
+    story_id INTEGER NOT NULL,
+    relation_type TEXT DEFAULT 'primary',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (article_id, story_id),
+    FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+    FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_articles_published ON articles(published_at);
-CREATE INDEX IF NOT EXISTS idx_articles_source ON articles(source_id);
-CREATE INDEX IF NOT EXISTS idx_articles_state ON articles(processing_state);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_articles_canonical_url
+    ON articles(canonical_url);
+CREATE INDEX IF NOT EXISTS idx_articles_source_id
+    ON articles(source_id);
+CREATE INDEX IF NOT EXISTS idx_articles_published_at
+    ON articles(published_at);
+CREATE INDEX IF NOT EXISTS idx_articles_content_hash
+    ON articles(content_hash);
+CREATE INDEX IF NOT EXISTS idx_articles_processing_state
+    ON articles(processing_state);
+CREATE INDEX IF NOT EXISTS idx_stories_status
+    ON stories(status);
+CREATE INDEX IF NOT EXISTS idx_article_stories_story_id
+    ON article_stories(story_id);
