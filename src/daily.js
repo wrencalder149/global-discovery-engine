@@ -61,6 +61,9 @@ async function aiCall(env, system, user, maxCompletionTokens) {
 }
 
 export async function ensurePipelineTables(db) {
+  try {
+    await db.prepare("ALTER TABLE daily_pipeline_runs ADD COLUMN workflow_id TEXT").run();
+  } catch (_) {}
   await db.prepare(`CREATE TABLE IF NOT EXISTS daily_pipeline_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_date TEXT NOT NULL,
