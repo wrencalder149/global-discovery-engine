@@ -19,6 +19,12 @@ function taiwanDate() {
   }).format(new Date());
 }
 
+function isStale(run) {
+  if (!run || run.status !== "running" || !run.started_at) return false;
+  const started = Date.parse(`${run.started_at.replace(" ", "T")}Z`);
+  return Number.isFinite(started) && Date.now() - started > 20 * 60 * 1000;
+}
+
 async function pipelineStatus(db) {
   const runDate = taiwanDate();
   const row = await db.prepare(
@@ -45,16 +51,17 @@ export default {
       if (url.pathname === "/") {
         const current = await pipelineStatus(env.DB);
 
-        if (!current || current.status === "failed") {
+        if (!current || current.status === "failed" || isStale(current)) {
           const instance = await startWorkflow(env);
           return Response.json({
             name: "Global Discovery Engine",
             status: "online",
-            version: "0.3.0",
+            version: "0.3.1",
             pipeline: {
               status: "started",
               workflow_id: instance.id,
-              run_date: taiwanDate()
+              run_date: taiwanDate(),
+              recovered_stale_run: Boolean(isStale(current))
             }
           });
         }
@@ -62,14 +69,14 @@ export default {
         return Response.json({
           name: "Global Discovery Engine",
           status: "online",
-          version: "0.3.0",
+          version: "0.3.1",
           pipeline: current
         });
       }
 
       if (url.pathname === "/run") {
         const current = await pipelineStatus(env.DB);
-        if (current?.status === "running") {
+        if (current?.status === "running" && !isStale(current)) {
           return Response.json({ ok: true, status: "already_running", run_id: current.id });
         }
         if (current?.status === "success") {
@@ -94,7 +101,7 @@ export default {
       if (url.pathname === "/status") {
         return Response.json({
           ok: true,
-          version: "0.3.0",
+          version: "0.3.1",
           pipeline: await pipelineStatus(env.DB)
         });
       }
@@ -110,7 +117,8 @@ export default {
     await ensureExtendedTables(env.DB);
     try {
       const current = await pipelineStatus(env.DB);
-      if (current?.status === "running" || current?.status === "success") return;
+      if (current?.status === "success" || (current?.status === "running" && !isStale(current))) return;
+
       await env.DAILY_DISCOVERY.create({
         id: `scheduled-${taiwanDate()}-${crypto.randomUUID()}`,
         params: { run_date: taiwanDate(), trigger: "cron" }
