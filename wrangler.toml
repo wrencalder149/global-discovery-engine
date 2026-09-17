@@ -1,5 +1,5 @@
 name = "blue-cloud-c7c2"
-main = "src/index.js"
+main = "src/entry.js"
 compatibility_date = "2026-09-17"
 
 [triggers]
