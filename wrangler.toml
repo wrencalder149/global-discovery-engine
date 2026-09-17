@@ -1,0 +1,11 @@
+name = "global-discovery-engine"
+main = "src/index.js"
+compatibility_date = "2026-09-17"
+
+[triggers]
+crons = ["0 21 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "global-discovery"
+database_id = ""
