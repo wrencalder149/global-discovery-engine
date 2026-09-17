@@ -10,6 +10,8 @@ const RSS_SOURCES = [
   }
 ];
 
+const VERSION = "0.1.1";
+
 function clean(value) {
   if (!value) return "";
   return String(value)
@@ -175,7 +177,7 @@ export default {
         return Response.json({
           name: "Global Discovery Engine",
           status: "online",
-          version: "0.1",
+          version: VERSION,
           articles: Number(row?.count ?? 0),
           endpoints: ["/", "/health", "/db", "/collect"]
         });
@@ -188,6 +190,7 @@ export default {
 
         return Response.json({
           ok: true,
+          version: VERSION,
           articles: Number(row?.count ?? 0)
         });
       }
@@ -204,7 +207,7 @@ export default {
 
       if (url.pathname === "/collect") {
         const results = await collectAll(env.DB);
-        return Response.json({ ok: true, results });
+        return Response.json({ ok: true, version: VERSION, results });
       }
 
       return new Response("Not Found", { status: 404 });
