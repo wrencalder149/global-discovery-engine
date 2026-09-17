@@ -1,4 +1,4 @@
-name = "global-discovery-engine"
+name = "blue-cloud-c7c2"
 main = "src/index.js"
 compatibility_date = "2026-09-17"
 
@@ -8,4 +8,4 @@ crons = ["0 21 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "global-discovery"
-database_id = ""
+database_id = "f9c82884-642f-4697-9435-df0b6d8897bc"
