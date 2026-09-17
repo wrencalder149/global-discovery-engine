@@ -28,7 +28,7 @@ function isStale(run) {
 async function pipelineStatus(db) {
   const runDate = taiwanDate();
   const row = await db.prepare(
-    "SELECT id,run_date,status,started_at,finished_at,collection_run_id,candidate_count,selected_count,editorial_id,error FROM daily_pipeline_runs WHERE run_date=? ORDER BY id DESC LIMIT 1"
+    "SELECT id,run_date,status,started_at,finished_at,collection_run_id,workflow_id,candidate_count,selected_count,editorial_id,error FROM daily_pipeline_runs WHERE run_date=? ORDER BY id DESC LIMIT 1"
   ).bind(runDate).first();
   return row || null;
 }
@@ -56,7 +56,7 @@ export default {
           return Response.json({
             name: "Global Discovery Engine",
             status: "online",
-            version: "0.3.1",
+            version: "0.3.2",
             pipeline: {
               status: "started",
               workflow_id: instance.id,
@@ -69,7 +69,7 @@ export default {
         return Response.json({
           name: "Global Discovery Engine",
           status: "online",
-          version: "0.3.1",
+          version: "0.3.2",
           pipeline: current
         });
       }
@@ -99,10 +99,21 @@ export default {
       if (url.pathname === "/ai-health") return healthResponse(env.DB);
 
       if (url.pathname === "/status") {
+        const pipeline = await pipelineStatus(env.DB);
+        let workflow = null;
+        if (pipeline?.workflow_id) {
+          try {
+            const instance = await env.DAILY_DISCOVERY.get(pipeline.workflow_id);
+            workflow = await instance.status();
+          } catch (error) {
+            workflow = { status: "unknown", error: String(error) };
+          }
+        }
         return Response.json({
           ok: true,
-          version: "0.3.1",
-          pipeline: await pipelineStatus(env.DB)
+          version: "0.3.2",
+          pipeline,
+          workflow
         });
       }
 
