@@ -8,6 +8,11 @@ crons = ["0 21 * * *"]
 [ai]
 binding = "AI"
 
+[[workflows]]
+name = "global-discovery-daily"
+binding = "DAILY_DISCOVERY"
+class_name = "GlobalDiscoveryWorkflow"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "global-discovery"
