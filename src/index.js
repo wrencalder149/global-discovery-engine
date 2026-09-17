@@ -19,10 +19,11 @@ const GDELT_QUERIES = [
   { name: "culture", query: '(film OR music OR art OR design OR architecture OR literature)' }
 ];
 
-const GDELT_MAX_RECORDS = 40;
+const GDELT_MAX_RECORDS = 25;
 const GDELT_TIMESPAN = "24h";
 const MANUAL_COLLECTION_COOLDOWN_MS = 6 * 60 * 60 * 1000;
-const VERSION = "0.1.2";
+const BATCH_SIZE = 25;
+const VERSION = "0.1.3";
 
 function clean(value) {
   if (!value) return "";
@@ -52,6 +53,14 @@ function getTag(xml, name) {
 function getItems(xml) {
   return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)]
     .map((match) => match[1]);
+}
+
+function chunks(items, size) {
+  const output = [];
+  for (let i = 0; i < items.length; i += size) {
+    output.push(items.slice(i, i + size));
+  }
+  return output;
 }
 
 async function ensureRuntimeTables(db) {
@@ -115,9 +124,8 @@ async function ensureSource(db, source) {
   return row.id;
 }
 
-async function ensureGdeltSource(db, domain, country, language) {
-  const safeDomain = domain || "unknown";
-  const name = `GDELT: ${safeDomain}`;
+async function ensureGdeltSource(db) {
+  const name = "GDELT Global Radar";
 
   let row = await db
     .prepare("SELECT id FROM sources WHERE name = ? LIMIT 1")
@@ -129,12 +137,13 @@ async function ensureGdeltSource(db, domain, country, language) {
       INSERT INTO sources
         (name, base_url, language, country, region, source_type,
          status, first_seen_at, last_seen_at)
-      VALUES (?, ?, ?, ?, ?, 'aggregator', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, 'aggregator',
+              'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).bind(
       name,
-      safeDomain === "unknown" ? null : `https://${safeDomain}`,
-      language || null,
-      country || null,
+      "https://www.gdeltproject.org/",
+      "multi",
+      null,
       "global"
     ).run();
 
@@ -144,7 +153,7 @@ async function ensureGdeltSource(db, domain, country, language) {
       .first();
   }
 
-  if (!row) throw new Error(`Could not create GDELT source: ${name}`);
+  if (!row) throw new Error("Could not create GDELT source");
   return row.id;
 }
 
@@ -163,6 +172,7 @@ async function collectRSS(db, source) {
 
   let inserted = 0;
   let skipped = 0;
+  const statements = [];
 
   for (const item of itemList) {
     const title = getTag(item, "title");
@@ -175,32 +185,44 @@ async function collectRSS(db, source) {
       continue;
     }
 
-    const result = await db.prepare(`
-      INSERT OR IGNORE INTO articles
-        (source_id, title, url, canonical_url, language, country,
-         published_at, excerpt, processing_state)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'collected')
-    `).bind(
-      sourceId,
-      title,
-      url,
-      url,
-      source.language,
-      source.country,
-      publishedAt || null,
-      excerpt || null
-    ).run();
-
-    if ((result.meta?.changes ?? 0) > 0) inserted++;
-    else skipped++;
+    statements.push(
+      db.prepare(`
+        INSERT OR IGNORE INTO articles
+          (source_id, title, url, canonical_url, language, country,
+           published_at, excerpt, processing_state)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'collected')
+      `).bind(
+        sourceId,
+        title,
+        url,
+        url,
+        source.language,
+        source.country,
+        publishedAt || null,
+        excerpt || null
+      )
+    );
   }
 
-  return { items_found: itemList.length, inserted, skipped };
+  for (const batch of chunks(statements, BATCH_SIZE)) {
+    const results = await db.batch(batch);
+    for (const result of results) {
+      inserted += result.meta?.changes ?? 0;
+    }
+  }
+
+  skipped += statements.length - inserted;
+
+  return {
+    items_found: itemList.length,
+    inserted,
+    skipped
+  };
 }
 
 async function collectGdelt(db) {
   const results = [];
-  const sourceCache = new Map();
+  const sourceId = await ensureGdeltSource(db);
 
   for (const spec of GDELT_QUERIES) {
     const api = new URL("https://api.gdeltproject.org/api/v2/doc/doc");
@@ -222,7 +244,7 @@ async function collectGdelt(db) {
 
       const data = await response.json();
       const articles = Array.isArray(data.articles) ? data.articles : [];
-      let inserted = 0;
+      const statements = [];
 
       for (const article of articles) {
         const url = article.url || "";
@@ -230,44 +252,38 @@ async function collectGdelt(db) {
 
         if (!url || !title) continue;
 
-        const domain = article.domain || "unknown";
-        const sourceKey =
-          `${domain}|${article.sourcecountry || ""}|${article.language || ""}`;
+        statements.push(
+          db.prepare(`
+            INSERT OR IGNORE INTO articles
+              (source_id, title, url, canonical_url, language, country,
+               published_at, excerpt, processing_state)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'collected')
+          `).bind(
+            sourceId,
+            title,
+            url,
+            url,
+            article.language || null,
+            article.sourcecountry || null,
+            article.seendate || null,
+            article.domain ? `GDELT domain: ${article.domain}` : null
+          )
+        );
+      }
 
-        let sourceId = sourceCache.get(sourceKey);
-
-        if (!sourceId) {
-          sourceId = await ensureGdeltSource(
-            db,
-            domain,
-            article.sourcecountry,
-            article.language
-          );
-          sourceCache.set(sourceKey, sourceId);
+      let inserted = 0;
+      for (const batch of chunks(statements, BATCH_SIZE)) {
+        const batchResults = await db.batch(batch);
+        for (const result of batchResults) {
+          inserted += result.meta?.changes ?? 0;
         }
-
-        const result = await db.prepare(`
-          INSERT OR IGNORE INTO articles
-            (source_id, title, url, canonical_url, language, country,
-             published_at, processing_state)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'collected')
-        `).bind(
-          sourceId,
-          title,
-          url,
-          url,
-          article.language || null,
-          article.sourcecountry || null,
-          article.seendate || null
-        ).run();
-
-        if ((result.meta?.changes ?? 0) > 0) inserted++;
       }
 
       results.push({
         topic: spec.name,
         ok: true,
         items_found: articles.length,
+        prepared: statements.length,
         inserted
       });
     } catch (error) {
