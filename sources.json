@@ -1,0 +1,10 @@
+[
+  {
+    "name": "BBC World",
+    "url": "https://www.bbc.com/news/world",
+    "feed_url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "language": "en",
+    "region": "global",
+    "source_type": "media"
+  }
+]
