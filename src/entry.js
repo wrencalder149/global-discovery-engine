@@ -5,7 +5,7 @@ import {
   podcastResponse,
   audioResponse,
   healthResponse
-} from "./daily.js";
+} from "./publish.js";
 import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
