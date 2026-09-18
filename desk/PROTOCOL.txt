@@ -1,30 +1,11 @@
-World Reader desk — daily protocol
+Daily paper, not a single essay.
 
-PACKS
-1) briefing = 簡報. Short is allowed. 3 to 5 items. Each item 200 to 400 Chinese characters. Context required. No headline stack.
-2) feature = 正式報導. NOT a teaser. 1 or 2 COMPLETE articles. Each 1200 to 2800 Chinese characters.
-3) culture = 正式報導或評論. 1 or 2 COMPLETE pieces. Same length. No Marvel, box office, idol promo.
+THREE PACKS every day:
+1) briefing.md — 4 to 6 short items with context. Briefing is allowed here only.
+2) feature.md — TWO complete reported articles. Each 1200+ Chinese characters. Not teasers.
+3) culture.md — TWO complete reported articles or essays. Each 1200+ Chinese characters.
 
-A COMPLETE ARTICLE MUST CONTAIN
-- opening that states what is happening and why it matters now
-- the object or conflict in concrete terms (who, where, number, institution)
-- background that stops the reader from receiving a naked event
-- what is confirmed, by which sources
-- what is still single-source or disputed
-- ending that does not invent a moral
-If a piece is only a lead plus 「目前僅見 XX」, it is a briefing item. Do not put it in feature or culture.
-
-METHOD
-Collect many titles. Deep-read 8 to 12 full texts. Take notes in original language first. Then write Traditional Chinese Taiwan.
-Paywall = clue, not fake article.
-Hard facts only: deaths, loan vs repatriation, institution names, numbers.
-
-OUTPUT FILES
-desk/editions/YYYY-MM-DD/briefing.md
-desk/editions/YYYY-MM-DD/feature.md
-desk/editions/YYYY-MM-DD/culture.md
-desk/editions/YYYY-MM-DD/notes.md
-Then rebuild desk/feed.xml and commit main.
-
-FAILURE RULE
-If feature or culture is still a briefing, do not publish those packs.
+A pack with only one short item is not a newspaper. Do not ship it.
+If a piece is unfinished, omit that piece; do not replace it with a teaser.
+Read full texts first. Translate/write into zh-TW last.
+No Marvel, box office, idols. No Workers AI writer. No URL dumps.
