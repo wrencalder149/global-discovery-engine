@@ -1,10 +1,10 @@
 function xmlEscape(value) {
   return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/"/g, """)
+    .replace(/'/g, "'");
 }
 
 function slotLabel(mode) {
@@ -22,9 +22,15 @@ function isDump(body) {
   // old fallback markers that paste raw foreign titles as primary content
   if (text.indexOf("今日先收到素材") >= 0) return true;
   if (text.indexOf("用繁中說明來源與重點") >= 0) return true;
+  // current incomplete-compile markers
+  if (text.indexOf("待完整編譯") >= 0) return true;
+  if (text.indexOf("原文摘要（尚未完整譯寫）") >= 0) return true;
+  if (text.indexOf("AI 編譯未完成") >= 0) return true;
+  if (text.indexOf("尚未完整譯寫") >= 0) return true;
+  if (text.indexOf("素材") >= 0 && text.indexOf("來源語言非中文") >= 0) return true;
 
   const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
-  if (cjk < 80) return true;
+  if (cjk < 120) return true;
 
   // allow structured packs that put links only at the end
   const linkCount = (text.match(/https?:\/\//g) || []).length;
