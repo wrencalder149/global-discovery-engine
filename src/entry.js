@@ -6,11 +6,12 @@ import {
   audioResponse,
   healthResponse
 } from "./publish.js";
+import { packThree } from "./pack-three.js";
 import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 const LIVE_WORKFLOW_STATES = new Set(["queued", "running", "waiting", "paused"]);
 
 function taiwanDate() {
@@ -49,13 +50,9 @@ async function startWorkflow(env, reason) {
 async function recoverIfNeeded(env) {
   await ensureExtendedTables(env.DB);
   const run = await pipelineStatus(env.DB);
-  if (run && run.status === "success") {
-    return { recovered_stale_run: false, new_workflow_id: null };
-  }
+  if (run && run.status === "success") return { recovered_stale_run: false, new_workflow_id: null };
   const workflow = run ? await readWorkflow(env, run.workflow_id) : null;
-  if (workflow && LIVE_WORKFLOW_STATES.has(workflow.status)) {
-    return { recovered_stale_run: false, new_workflow_id: null };
-  }
+  if (workflow && LIVE_WORKFLOW_STATES.has(workflow.status)) return { recovered_stale_run: false, new_workflow_id: null };
   const workflow_id = await startWorkflow(env, run ? "recover" : "bootstrap");
   return { recovered_stale_run: true, new_workflow_id: workflow_id };
 }
@@ -70,6 +67,11 @@ export default {
     }
     if (url.pathname.startsWith("/audio/")) {
       return audioResponse(request, env, url.pathname.split("/")[2]);
+    }
+    if (url.pathname === "/rebuild") {
+      await ensureExtendedTables(env.DB);
+      const packed = await packThree(env.DB, null);
+      return Response.json({ ok: true, version: VERSION, packed });
     }
     if (url.pathname === "/run") {
       const extra = await recoverIfNeeded(env);
