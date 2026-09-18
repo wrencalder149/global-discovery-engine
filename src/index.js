@@ -1,3 +1,5 @@
+import { EXTRA_RSS_SOURCES, EXTRA_GOOGLE_RADARS } from "./source-catalog.js";
+
 const RSS_SOURCES = [
   {
     name: "BBC News - World",
@@ -79,7 +81,8 @@ const GOOGLE_RADAR_SOURCES = [
   { name: "Google News Radar - science", query: "science OR research OR technology OR medicine OR space" },
   { name: "Google News Radar - environment", query: "climate OR biodiversity OR pollution OR wildfire OR drought" },
   { name: "Google News Radar - society", query: "migration OR education OR housing OR inequality OR protest" },
-  { name: "Google News Radar - culture", query: "film OR music OR art OR design OR architecture OR literature" }
+  { name: "Google News Radar - culture", query: "film OR music OR art OR design OR architecture OR literature" },
+  ...EXTRA_GOOGLE_RADARS
 ].map((item) => ({
   ...item,
   base_url: "https://news.google.com/",
@@ -95,7 +98,10 @@ const GDELT_MAX_RECORDS = 250;
 const GDELT_TIMESPAN = "24h";
 const MANUAL_COLLECTION_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const BATCH_SIZE = 25;
-const VERSION = "0.2.0";
+const VERSION = "0.4.0";
+const EXTRA_BASE = 12;
+const EXTRA_PER_SUCCESSFUL_DAY = 8;
+const EXTRA_FETCH_CAP = 36;
 
 function clean(value) {
   if (!value) return "";
@@ -248,8 +254,21 @@ async function collectGdelt(db) {
   return { items_found: articles.length, inserted: result.inserted };
 }
 
+async function extrasForToday(db) {
+  const successRow = await db.prepare("SELECT COUNT(*) AS n FROM collection_runs WHERE status IN ('success','partial')").first();
+  const totalRow = await db.prepare("SELECT COUNT(*) AS n FROM collection_runs").first();
+  const unlocked = Math.min(EXTRA_RSS_SOURCES.length, EXTRA_BASE + Number(successRow?.n || 0) * EXTRA_PER_SUCCESSFUL_DAY);
+  const pool = EXTRA_RSS_SOURCES.slice(0, Math.max(unlocked, EXTRA_BASE));
+  for (const source of pool) {
+    try { await ensureSource(db, source); } catch (_) {}
+  }
+  const offset = Number(totalRow?.n || 0) * 7 % Math.max(pool.length, 1);
+  return [...pool.slice(offset), ...pool.slice(0, offset)].slice(0, EXTRA_FETCH_CAP);
+}
+
 async function runCollection(db, mode) {
   await ensureRuntimeTables(db);
+  const extras = await extrasForToday(db);
   const run = await db.prepare("INSERT INTO collection_runs (mode) VALUES (?) RETURNING id").bind(mode).first();
   const runId = run.id;
   const errors = [];
@@ -258,7 +277,7 @@ async function runCollection(db, mode) {
   let gdeltItemsFound = 0;
   let gdeltInserted = 0;
 
-  for (const source of [...RSS_SOURCES, ...GOOGLE_RADAR_SOURCES]) {
+  for (const source of [...RSS_SOURCES, ...GOOGLE_RADAR_SOURCES, ...extras]) {
     try {
       const result = await collectRSS(db, source);
       rssItemsFound += result.items_found;
@@ -291,6 +310,8 @@ async function runCollection(db, mode) {
     rss_inserted: rssInserted,
     gdelt_items_found: gdeltItemsFound,
     gdelt_inserted: gdeltInserted,
+    extras_fetched: extras.length,
+    catalog_size: EXTRA_RSS_SOURCES.length,
     errors
   };
 }
