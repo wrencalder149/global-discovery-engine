@@ -32,19 +32,20 @@ def main():
         '<rss version="2.0"><channel>',
         '<title>World Reader</title>',
         '<description>每日三包正體中文匯整</description>',
-        f'<lastBuildDate>{now}</lastBuildDate>',
+        '<lastBuildDate>' + now + '</lastBuildDate>',
         '<language>zh-TW</language>'
     ]
     for day, label, title, body in items:
+        full_title = "【" + label + "】" + title
         parts.append('<item>')
-        parts.append(f'<title>{html.escape(「【」 + label + 「】」 + title)}</title>')
-        parts.append(f'<description>{html.escape(body)}</description>')
-        parts.append(f'<guid isPermaLink="false">world-reader-{day}-{label}</guid>')
-        parts.append(f'<pubDate>{now}</pubDate>')
+        parts.append('<title>' + html.escape(full_title) + '</title>')
+        parts.append('<description>' + html.escape(body) + '</description>')
+        parts.append('<guid isPermaLink="false">world-reader-' + day + '-' + label + '</guid>')
+        parts.append('<pubDate>' + now + '</pubDate>')
         parts.append('</item>')
     parts.append('</channel></rss>')
     OUT.write_text("\n".join(parts), encoding="utf-8")
-    print(f"wrote {OUT} items={len(items)}")
+    print("wrote", OUT, "items", len(items))
 
 if __name__ == "__main__":
     main()
