@@ -10,7 +10,7 @@ import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
 
-const VERSION = "0.3.5";
+const VERSION = "0.4.0";
 const STALE_AFTER_MS = 45 * 60 * 1000;
 const LIVE_WORKFLOW_STATES = new Set(["queued", "running", "waiting", "paused"]);
 
@@ -38,202 +38,92 @@ async function pipelineStatus(db) {
 }
 
 async function readWorkflow(env, workflowId) {
-  if (!workflowId || !env.DAILY_DISCOVERY) return null;
+  if (!env.DAILY_DISCOVERY || !workflowId) return null;
   try {
     const instance = await env.DAILY_DISCOVERY.get(workflowId);
     return await instance.status();
-  } catch (error) {
-    return { status: "unknown", error: String(error) };
+  } catch (_) {
+    return null;
   }
 }
 
-function workflowAlive(workflow) {
-  const status = String(workflow?.status || "").toLowerCase();
-  return LIVE_WORKFLOW_STATES.has(status);
-}
-
-function workflowDead(workflow) {
-  if (!workflow) return true;
-  const status = String(workflow.status || "").toLowerCase();
-  return status === "errored" || status === "terminated" || status === "unknown" || status === "cancelled" || status === "complete";
-}
-
-async function startWorkflow(env, trigger = "http") {
+async function startWorkflow(env, reason) {
   const runDate = taiwanDate();
-  const id = `${trigger}-${runDate}-${crypto.randomUUID()}`;
-  return env.DAILY_DISCOVERY.create({
-    id,
-    params: { run_date: runDate, trigger }
+  const instance = await env.DAILY_DISCOVERY.create({
+    id: `${reason}-${runDate}-${crypto.randomUUID()}`,
+    params: { run_date: runDate, reason }
   });
+  return instance.id;
 }
 
-async function markRecovered(db, runId, reason) {
-  await db.prepare(
-    "UPDATE daily_pipeline_runs SET status='failed', stage='recovered', error=?, finished_at=CURRENT_TIMESTAMP WHERE id=?"
-  ).bind(reason, runId).run();
+async function recoverIfNeeded(env) {
+  await ensureExtendedTables(env.DB);
+  const run = await pipelineStatus(env.DB);
+  if (!run) {
+    const workflow_id = await startWorkflow(env, "bootstrap");
+    return { recovered_legacy_run: false, recovered_stale_run: false, new_workflow_id: workflow_id };
+  }
+  const workflow = await readWorkflow(env, run.workflow_id);
+  const live = workflow && LIVE_WORKFLOW_STATES.has(workflow.status);
+  if (run.status === "success") {
+    return { recovered_legacy_run: false, recovered_stale_run: false, new_workflow_id: null };
+  }
+  if (live) {
+    return { recovered_legacy_run: false, recovered_stale_run: false, new_workflow_id: null };
+  }
+  if (run.status === "failed" || isTimedOut(run) || !live) {
+    const workflow_id = await startWorkflow(env, "recover");
+    return { recovered_legacy_run: false, recovered_stale_run: true, new_workflow_id: workflow_id };
+  }
+  return { recovered_legacy_run: false, recovered_stale_run: false, new_workflow_id: null };
 }
 
-async function recoverIfNeeded(env, pipeline) {
-  if (!pipeline || pipeline.status === "success") {
-    return { pipeline, recovered: false };
-  }
-
-  if (pipeline.status !== "running") {
-    return { pipeline, recovered: false };
-  }
-
-  const workflow = await readWorkflow(env, pipeline.workflow_id);
-
-  if (pipeline.workflow_id && workflowAlive(workflow)) {
-    return { pipeline, workflow, recovered: false };
-  }
-
-  if (String(workflow?.status || "").toLowerCase() === "complete" && pipeline.status === "running") {
-    const latest = await pipelineStatus(env.DB);
-    if (latest?.status === "success") return { pipeline: latest, workflow, recovered: false };
-  }
-
-  const missingId = pipeline.status === "running" && !pipeline.workflow_id;
-  const dead = pipeline.workflow_id && workflowDead(workflow);
-  const timedOut = isTimedOut(pipeline) && !workflowAlive(workflow);
-
-  if (!missingId && !dead && !timedOut) {
-    return { pipeline, workflow, recovered: false };
-  }
-
-  const reason = missingId
-    ? "legacy run without Workflow instance ID"
-    : dead
-      ? `workflow ${workflow?.status || "missing"} recovered by /status`
-      : "stale run recovered by /status";
-
-  await markRecovered(env.DB, pipeline.id, reason);
-  const instance = await startWorkflow(env, "recovery");
-  const next = await pipelineStatus(env.DB);
+async function statusPayload(env) {
+  const pipeline = await pipelineStatus(env.DB);
+  const workflow = pipeline ? await readWorkflow(env, pipeline.workflow_id) : null;
   return {
-    pipeline: next,
-    workflow: { status: "started", id: instance.id },
-    recovered: true,
-    recovered_legacy_run: missingId,
-    recovered_stale_run: timedOut || dead,
-    new_workflow_id: instance.id
+    ok: true,
+    version: VERSION,
+    pipeline,
+    workflow,
+    recovered_legacy_run: false,
+    recovered_stale_run: false,
+    new_workflow_id: null
   };
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    await ensureExtendedTables(env.DB);
-
-    try {
-      if (url.pathname === "/") {
-        const current = await pipelineStatus(env.DB);
-        const recovered = await recoverIfNeeded(env, current);
-
-        if (recovered.recovered) {
-          return Response.json({
-            name: "Global Discovery Engine",
-            status: "online",
-            version: VERSION,
-            pipeline: {
-              status: "started",
-              workflow_id: recovered.new_workflow_id,
-              run_date: taiwanDate(),
-              recovered_stale_run: Boolean(recovered.recovered_stale_run),
-              recovered_legacy_run: Boolean(recovered.recovered_legacy_run)
-            }
-          });
-        }
-
-        if (!current || current.status === "failed") {
-          const instance = await startWorkflow(env, "bootstrap");
-          return Response.json({
-            name: "Global Discovery Engine",
-            status: "online",
-            version: VERSION,
-            pipeline: {
-              status: "started",
-              workflow_id: instance.id,
-              run_date: taiwanDate()
-            }
-          });
-        }
-
-        return Response.json({
-          name: "Global Discovery Engine",
-          status: "online",
-          version: VERSION,
-          pipeline: current
-        });
-      }
-
-      if (url.pathname === "/run") {
-        const current = await pipelineStatus(env.DB);
-        const recovered = await recoverIfNeeded(env, current);
-        if (recovered.recovered) {
-          return Response.json({
-            ok: true,
-            status: "started",
-            workflow_id: recovered.new_workflow_id,
-            recovered: true
-          });
-        }
-        if (current?.status === "running") {
-          return Response.json({ ok: true, status: "already_running", run_id: current.id, workflow_id: current.workflow_id, stage: current.stage });
-        }
-        if (current?.status === "success") {
-          return Response.json({ ok: true, status: "already_done", run_id: current.id, editorial_id: current.editorial_id });
-        }
-        const instance = await startWorkflow(env, "manual");
-        return Response.json({ ok: true, status: "started", workflow_id: instance.id });
-      }
-
-      if (url.pathname === "/episode") return episodeResponse(env.DB);
-
-      const episodeMatch = url.pathname.match(/^\/episode\/(\d+)$/);
-      if (episodeMatch) return episodeResponse(env.DB, episodeMatch[1]);
-
-      if (url.pathname === "/podcast.xml") return podcastResponse(request, env.DB);
-
-      const audioMatch = url.pathname.match(/^\/audio\/(\d+)$/);
-      if (audioMatch) return audioResponse(request, env, audioMatch[1]);
-
-      if (url.pathname === "/ai-health") return healthResponse(env.DB);
-
-      if (url.pathname === "/status") {
-        const current = await pipelineStatus(env.DB);
-        const recovered = await recoverIfNeeded(env, current);
-        const workflow = recovered.workflow || await readWorkflow(env, recovered.pipeline?.workflow_id);
-
-        return Response.json({
-          ok: true,
-          version: VERSION,
-          pipeline: recovered.pipeline,
-          workflow,
-          recovered_legacy_run: Boolean(recovered.recovered_legacy_run),
-          recovered_stale_run: Boolean(recovered.recovered_stale_run),
-          new_workflow_id: recovered.new_workflow_id || null
-        });
-      }
-
-      return app.fetch(request, env, ctx);
-    } catch (error) {
-      console.error(error);
-      return Response.json({ ok: false, error: String(error) }, { status: 500 });
+    if (url.pathname === "/status") {
+      const extra = await recoverIfNeeded(env).catch(() => ({}));
+      const payload = await statusPayload(env);
+      return Response.json({ ...payload, ...extra });
     }
+    if (url.pathname === "/health") return healthResponse(env.DB);
+    if (url.pathname === "/podcast.xml" || url.pathname === "/feed.xml") return podcastResponse(request, env.DB);
+    if (url.pathname === "/episode" || url.pathname.startsWith("/episode/")) {
+      const id = url.pathname.split("/")[2];
+      return episodeResponse(env.DB, id);
+    }
+    if (url.pathname.startsWith("/audio/")) {
+      const id = url.pathname.split("/")[2];
+      return audioResponse(request, env, id);
+    }
+    if (url.pathname === "/") {
+      const extra = await recoverIfNeeded(env).catch((error) => ({ error: String(error) }));
+      return Response.json({
+        name: "Global Discovery Engine",
+        status: "online",
+        version: VERSION,
+        pipeline: extra.new_workflow_id ? { status: "started", workflow_id: extra.new_workflow_id, run_date: taiwanDate() } : await pipelineStatus(env.DB),
+        rss: "/podcast.xml"
+      });
+    }
+    if (typeof app.fetch === "function") return app.fetch(request, env, ctx);
+    return new Response("Not found", { status: 404 });
   },
-
   async scheduled(controller, env, ctx) {
-    await ensureExtendedTables(env.DB);
-    try {
-      const current = await pipelineStatus(env.DB);
-      const recovered = await recoverIfNeeded(env, current);
-      if (recovered.recovered) return;
-      if (current?.status === "success" || current?.status === "running") return;
-
-      await startWorkflow(env, "cron");
-    } catch (error) {
-      console.error("scheduled workflow trigger", error);
-    }
+    ctx.waitUntil(recoverIfNeeded(env));
   }
 };
