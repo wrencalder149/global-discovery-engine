@@ -9,14 +9,15 @@ function slotLabel(mode) {
   return mode || "匯整";
 }
 
-function isDump(body) {
+function isFinishedPack(body) {
   const text = String(body || "");
-  if (!text) return true;
-  if (text.indexOf("小篇 ") >= 0) return true;
-  if (text.indexOf("原文：") >= 0) return true;
-  if (text.indexOf("連結：") >= 0) return true;
-  if ((text.match(/https?:\/\//g) || []).length >= 6) return true;
-  return false;
+  if (text.length < 360) return false;
+  if (text.indexOf("小篇 ") >= 0) return false;
+  if (text.indexOf("原文：") >= 0) return false;
+  if (text.indexOf("今日先收到素材") >= 0) return false;
+  if ((text.match(/https?:\/\//g) || []).length >= 4) return false;
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+  return cjk > text.length * 0.35;
 }
 
 async function latestPacks(db) {
@@ -26,7 +27,7 @@ async function latestPacks(db) {
   const picked = {};
   for (const row of rows.results || []) {
     if (picked[row.mode]) continue;
-    if (isDump(row.body)) continue;
+    if (!isFinishedPack(row.body)) continue;
     picked[row.mode] = row;
   }
   return ["briefing", "feature", "culture"].map((mode) => picked[mode]).filter(Boolean);
@@ -39,7 +40,7 @@ export async function episodeResponse(db, id) {
     return Response.json({ ok: true, editorial });
   }
   const articles = await latestPacks(db);
-  if (!articles.length) return Response.json({ ok: false, error: "Waiting for translated packs" }, { status: 404 });
+  if (articles.length < 3) return Response.json({ ok: false, error: "Packs still writing" }, { status: 404 });
   return Response.json({ ok: true, articles });
 }
 
@@ -52,7 +53,7 @@ export async function podcastResponse(request, db) {
     const title = "【" + slotLabel(row.mode) + "】" + (row.title || "Global Discovery");
     return "\n<item>\n<title>" + xmlEscape(title) + "</title>\n<description>" + xmlEscape(row.body || "") + "</description>\n<pubDate>" + date + "</pubDate>\n<guid isPermaLink=\"false\">global-discovery-" + row.mode + "-" + row.id + "</guid>\n<link>" + origin + "/episode/" + row.id + "</link>\n</item>";
   }).join("\n");
-  const xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n<channel>\n<title>Global Discovery</title>\n<description>每日三包繁體中文匯整</description>\n<link>" + origin + "/</link>\n<lastBuildDate>" + now + "</lastBuildDate>" + items + "\n</channel>\n</rss>";
+  const xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n<channel>\n<title>Global Discovery</title>\n<description>每日三份正體中文匯整報章</description>\n<link>" + origin + "/</link>\n<lastBuildDate>" + now + "</lastBuildDate>" + items + "\n</channel>\n</rss>";
   return new Response(xml, { headers: { "content-type": "application/rss+xml; charset=utf-8", "cache-control": "public, max-age=60" } });
 }
 
@@ -62,8 +63,8 @@ export async function audioResponse() {
 
 export async function healthResponse(db) {
   const [pipeline, packs] = await Promise.all([
-    db.prepare("SELECT * FROM daily_pipeline_runs ORDER BY id DESC LIMIT 5").all(),
+    db.prepare("SELECT id,status,stage,error FROM daily_pipeline_runs ORDER BY id DESC LIMIT 5").all(),
     latestPacks(db)
   ]);
-  return Response.json({ ok: true, packs: packs.map((row) => ({ id: row.id, mode: row.mode, title: row.title })), runs: pipeline.results });
+  return Response.json({ ok: true, ready: packs.length === 3, packs: packs.map((row) => ({ id: row.id, mode: row.mode, title: row.title })), runs: pipeline.results });
 }
