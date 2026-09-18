@@ -11,26 +11,43 @@ import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
 
-const VERSION = "0.6.1";
+const VERSION = "0.6.2";
 const LIVE_WORKFLOW_STATES = new Set(["queued", "running", "waiting", "paused"]);
 
 function taiwanDate() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
 }
 
 async function pipelineStatus(db) {
-  return await db.prepare(
-    "SELECT id,run_date,status,stage,started_at,finished_at,collection_run_id,workflow_id,candidate_count,selected_count,editorial_id,error FROM daily_pipeline_runs ORDER BY id DESC LIMIT 1"
-  ).first();
+  return await db
+    .prepare(
+      "SELECT id,run_date,status,stage,started_at,finished_at,collection_run_id,workflow_id,candidate_count,selected_count,editorial_id,error FROM daily_pipeline_runs ORDER BY id DESC LIMIT 1"
+    )
+    .first();
 }
 
 async function latestBody(db) {
-  return await db.prepare("SELECT body FROM editorials WHERE mode IN ('briefing','feature','culture') ORDER BY id DESC LIMIT 1").first();
+  return await db
+    .prepare(
+      "SELECT body FROM editorials WHERE mode IN ('briefing','feature','culture') ORDER BY id DESC LIMIT 1"
+    )
+    .first();
 }
 
 function looksLikeDump(body) {
   const text = String(body || "");
-  return !text || text.indexOf("小篇 ") >= 0 || text.indexOf("連結：") >= 0;
+  if (!text || text.length < 120) return true;
+  if (text.indexOf("小篇 ") >= 0) return true;
+  if (text.indexOf("原文：") >= 0) return true;
+  if (text.indexOf("今日先收到素材") >= 0) return true;
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
+  if (cjk < 100) return true;
+  return false;
 }
 
 async function readWorkflow(env, workflowId) {
@@ -70,7 +87,9 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === "/health") return healthResponse(env.DB);
-    if (url.pathname === "/podcast.xml" || url.pathname === "/feed.xml") return podcastResponse(request, env.DB);
+    if (url.pathname === "/podcast.xml" || url.pathname === "/feed.xml") {
+      return podcastResponse(request, env.DB);
+    }
     if (url.pathname === "/episode" || url.pathname.startsWith("/episode/")) {
       return episodeResponse(env.DB, url.pathname.split("/")[2]);
     }
