@@ -4,7 +4,7 @@ const CULTURE_RE = /film|cinema|music|design|archiv|restor|literat|histor|philos
 const NEWS_RE = /elect|war|nato|president|minister|ceasefire|economy|summit|外交|總理|總統|歐盟|選舉|停火|軍事|峰會|制裁|通膨|央行/i;
 
 function clean(value) {
-  return String(value || "").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+  return String(value || "").replace(/<[^>]+>/g, " ").replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">").replace(/\s+/g, " ").trim();
 }
 
 function taiwanDate() {
@@ -63,12 +63,30 @@ function compactRows(rows, limit) {
 }
 
 function looksLikeGoodPack(text) {
-  if (!text || text.length < 280) return false;
+  if (!text || text.length < 320) return false;
+  // reject known incomplete / dump markers
   if (text.indexOf("小篇 ") >= 0) return false;
   if (text.indexOf("原文：") >= 0) return false;
+  if (text.indexOf("待完整編譯") >= 0) return false;
+  if (text.indexOf("原文摘要（尚未完整譯寫）") >= 0) return false;
+  if (text.indexOf("素材") >= 0 && text.indexOf("來源語言非中文") >= 0) return false;
+  if (text.indexOf("今日先收到素材") >= 0) return false;
+  if (text.indexOf("用繁中說明來源與重點") >= 0) return false;
+
   const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
-  if (cjk < 180) return false;
-  if ((text.match(/https?:\/\//g) || []).length >= 10) return false;
+  if (cjk < 280) return false;
+
+  // links must stay at the end; reject early URL dumps
+  const linkCount = (text.match(/https?:\/\//g) || []).length;
+  if (linkCount >= 10) return false;
+  if (linkCount >= 3) {
+    const firstLink = text.indexOf("http");
+    if (firstLink >= 0 && firstLink < Math.floor(text.length * 0.5)) return false;
+  }
+
+  // require structured short entries
+  if (!/【\s*\d+\s*】/.test(text) && !/\d+[.、]\s*\S/.test(text)) return false;
+
   return true;
 }
 
@@ -80,15 +98,18 @@ function hasMostlyCjk(s) {
 }
 
 function buildFallback(mode, items, date) {
+  // Intentional incomplete marker so isDump / looksLikeDump will reject and trigger rebuild
   const lines = [];
   lines.push(HEADS[mode] + "｜" + date);
   lines.push("");
+  lines.push("【系統】AI 編譯未完成，本包仍為待完整編譯狀態，請勿當成正式繁中匯整。");
+  lines.push("");
   if (mode === "briefing") {
-    lines.push("以下為今日時事合集。每則以繁體中文整理可核對重點與必要背景；單一來源已標註。連結集中於文末。");
+    lines.push("以下為今日時事合集素材線索（尚未完整譯寫）。");
   } else if (mode === "feature") {
-    lines.push("以下為深度與調查合集。每則保留可核對重點，避免無根據推論。連結集中於文末。");
+    lines.push("以下為深度與調查合集素材線索（尚未完整譯寫）。");
   } else {
-    lines.push("以下為文化與知識合集（音樂、修復電影、文學、設計、歷史、人類學等）。排除商業票房與偶像宣傳。連結集中於文末。");
+    lines.push("以下為文化與知識合集素材線索（尚未完整譯寫）。");
   }
   lines.push("");
 
@@ -148,7 +169,8 @@ async function writePack(env, mode, rows, date) {
     "3. 單一來源必須寫「目前僅見此來源」。\n" +
     "4. 禁止發明事實；禁止把標題堆在一起；禁止在正文中間放網址。\n" +
     "5. 所有原文連結只能出現在全文最後，用「原文連結：」開頭，每行一條。\n" +
-    "6. 直接輸出正文，不要前言、不要 markdown 標題符號。";
+    "6. 直接輸出正文，不要前言、不要 markdown 標題符號。\n" +
+    "7. 必須使用【1】【2】這類編號；每則都要有可閱讀的繁中說明，不可只貼外語摘要。";
 
   if (env.AI && items.length) {
     try {
@@ -165,8 +187,35 @@ async function writePack(env, mode, rows, date) {
             }).slice(0, 9500)
           }
         ],
-        max_completion_tokens: 2600,
-        temperature: 0.15
+        max_completion_tokens: 2800,
+        temperature: 0.12
+      });
+      const text = responseText(result).trim();
+      if (looksLikeGoodPack(text)) {
+        return {
+          title: HEADS[mode] + "｜" + date,
+          body: text,
+          count: items.length
+        };
+      }
+    } catch (_) {}
+  }
+
+  // second attempt with a lighter prompt if first failed
+  if (env.AI && items.length) {
+    try {
+      const lightSystem =
+        "只用台灣繁體中文寫「" + HEADS[mode] + "」合集。每則【編號】＋繁中標題＋80字背景。單一來源寫「目前僅見此來源」。連結全部放最後「原文連結：」。禁止外語標題當主文。";
+      const result = await env.AI.run(TEXT_MODEL, {
+        messages: [
+          { role: "system", content: lightSystem },
+          {
+            role: "user",
+            content: JSON.stringify({ date, mode, items: items.slice(0, 6) }).slice(0, 7000)
+          }
+        ],
+        max_completion_tokens: 2200,
+        temperature: 0.1
       });
       const text = responseText(result).trim();
       if (looksLikeGoodPack(text)) {
