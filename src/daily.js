@@ -61,8 +61,23 @@ async function aiCall(env, system, user, maxCompletionTokens) {
 }
 
 export async function ensurePipelineTables(db) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS daily_pipeline_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_date TEXT NOT NULL,
+    started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    collection_run_id INTEGER,
+    candidate_count INTEGER DEFAULT 0,
+    selected_count INTEGER DEFAULT 0,
+    editorial_id INTEGER,
+    error TEXT
+  )`).run();
   try {
     await db.prepare("ALTER TABLE daily_pipeline_runs ADD COLUMN workflow_id TEXT").run();
+  } catch (_) {}
+  try {
+    await db.prepare("ALTER TABLE daily_pipeline_runs ADD COLUMN stage TEXT").run();
   } catch (_) {}
   await db.prepare(`CREATE TABLE IF NOT EXISTS daily_pipeline_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
