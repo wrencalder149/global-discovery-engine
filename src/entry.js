@@ -11,7 +11,7 @@ import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
 
-const VERSION = "0.6.5";
+const VERSION = "0.6.6";
 const LIVE_WORKFLOW_STATES = new Set(["queued", "running", "waiting", "paused"]);
 
 function taiwanDate() {
@@ -46,8 +46,13 @@ function looksLikeDump(body) {
   if (text.indexOf("原文：") >= 0) return true;
   if (text.indexOf("今日先收到素材") >= 0) return true;
   if (text.indexOf("用繁中說明來源與重點") >= 0) return true;
+  if (text.indexOf("待完整編譯") >= 0) return true;
+  if (text.indexOf("原文摘要（尚未完整譯寫）") >= 0) return true;
+  if (text.indexOf("AI 編譯未完成") >= 0) return true;
+  if (text.indexOf("尚未完整譯寫") >= 0) return true;
+  if (text.indexOf("素材") >= 0 && text.indexOf("來源語言非中文") >= 0) return true;
   const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
-  if (cjk < 80) return true;
+  if (cjk < 120) return true;
   return false;
 }
 
