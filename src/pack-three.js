@@ -15,12 +15,12 @@ function responseText(result) {
   if (!result) return "";
   if (typeof result === "string") return result;
   if (typeof result.response === "string") return result.response;
-  if (result.choices?.[0]?.message?.content) return result.choices[0].message.content;
+  if (result.choices && result.choices[0] && result.choices[0].message) return result.choices[0].message.content || "";
   return "";
 }
 
 function bucketOf(row) {
-  const text = `${row.title || ""} ${row.excerpt || ""} ${row.source_name || ""}`;
+  const text = (row.title || "") + " " + (row.excerpt || "") + " " + (row.source_name || "");
   if (REJECT_RE.test(text)) return null;
   if (CULTURE_RE.test(text)) return "culture";
   if (NEWS_RE.test(text)) return "briefing";
@@ -53,57 +53,39 @@ function compactRows(rows, limit) {
 
 async function writePack(env, mode, rows, date) {
   const items = compactRows(rows, 10);
-  const system = [
-    "你是台灣繁體中文編輯。",
-    "把下面素材寫成一篇「" + HEADS[mode] + "」匯整。",
-    "不要貼原文標題堂。不要以網址當主文。",
-    "每則用繁中寫標題與 80到160字的背景說明。",
-    "若原文不是中文，必須譬成台灣繁中。",
-    "單一來源就寫「目前僅見此來源」。",
-    "連結只能放在段落最後一行。",
-    "禁止漫威、超級英雄、票房、偶像通稿。",
-    "直接輸出正文，不要 JSON。"
-  ].join("");
+  const system = "你是台灣繁體中文編輯。把素材寫成一篇「" + HEADS[mode] + "」匯整。不要貼原文標題堂，不要以網址當主文。每則用繁中寫標題與 80 到 160 字背景。原文不是中文就譬成繁中。單一來源寫目前僅見此來源。連結只能放最後一行。直接輸出正文。";
 
   if (env.AI && items.length) {
     try {
       const result = await env.AI.run(TEXT_MODEL, {
         messages: [
           { role: "system", content: system },
-          { role: "user", content: JSON.stringify({ date, mode, items }).slice(0, 9000) }
+          { role: "user", content: JSON.stringify({ date: date, mode: mode, items: items }).slice(0, 9000) }
         ],
         max_completion_tokens: 2200,
         temperature: 0.2
       });
       const text = responseText(result).trim();
-      if (text && !text.includes("小篇 ") && text.length > 200) {
+      if (text && text.indexOf("小篇 ") === -1 && text.length > 200) {
         return { title: HEADS[mode] + "｜" + date, body: text, count: items.length };
       }
-    } catch (_) {}
+    } catch (error) {}
   }
 
-  const fallback = [
-    HEADS[mode] + " ｜ " + date,
-    "今日先收到素材，以下用繁中說明來源與重點，不以原文標題堂代替內容。",
-    ""
-  ];
-  items.forEach((item, i) => {
-    fallback.push((i + 1) + ". " + (item.title || "無標題"));
-    fallback.push("來源：" + (item.source || "unknown") + (「（目前僅見此來源）」));
-    fallback.push(item.excerpt || "此則尚無足夠正文可整理。");
-    fallback.push("");
-  });
-  return { title: HEADS[mode] + "｜" + date, body: fallback.join("\n"), count: items.length };
+  const lines = [HEADS[mode] + " ｜ " + date, "今日先收到素材，用繁中說明來源與重點。", ""];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    lines.push((i + 1) + ". " + (item.title || "無標題"));
+    lines.push("來源：" + (item.source || "unknown") + "（目前僅見此來源）");
+    lines.push(item.excerpt || "此則尚無足夠正文可整理。");
+    lines.push("");
+  }
+  return { title: HEADS[mode] + "｜" + date, body: lines.join("\n"), count: items.length };
 }
 
 export async function packThree(env, runId) {
   const db = env.DB;
-  const result = await db.prepare(`
-    SELECT a.id, a.title, a.url, a.excerpt, a.raw_content, a.language,
-           s.name AS source_name, s.source_type, s.region
-    FROM articles a JOIN sources s ON s.id = a.source_id
-    ORDER BY a.id DESC LIMIT 180
-  `).all();
+  const result = await db.prepare("SELECT a.id, a.title, a.url, a.excerpt, a.raw_content, a.language, s.name AS source_name, s.source_type, s.region FROM articles a JOIN sources s ON s.id = a.source_id ORDER BY a.id DESC LIMIT 180").all();
   const rows = uniqueRows(result.results || []).filter((row) => bucketOf(row));
   if (!rows.length) throw new Error("No collected articles to synthesize");
 
@@ -112,31 +94,21 @@ export async function packThree(env, runId) {
     const bucket = bucketOf(row);
     if (bucket) buckets[bucket].push(row);
   }
-  if (buckets.briefing.length < 4) buckets.briefing.push(...rows.slice(0, 6));
-  if (buckets.feature.length < 4) buckets.feature.push(...rows.slice(0, 8));
-  if (buckets.culture.length < 4) buckets.culture.push(...rows.filter((row) => CULTURE_RE.test(`${row.title} ${row.excerpt}`)).slice(0, 6));
+  if (buckets.briefing.length < 4) buckets.briefing.push.apply(buckets.briefing, rows.slice(0, 6));
+  if (buckets.feature.length < 4) buckets.feature.push.apply(buckets.feature, rows.slice(0, 8));
 
   const date = taiwanDate();
   const saved = [];
   for (const mode of ["briefing", "feature", "culture"]) {
     const item = await writePack(env, mode, buckets[mode], date);
-    const story = await db.prepare(
-      "INSERT INTO stories (title, summary, topic, status, first_seen_at, last_updated_at) VALUES (?, ?, ?, 'selected', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id"
-    ).bind(item.title, item.title, mode).first();
-    const editorial = await db.prepare(
-      "INSERT INTO editorials (story_id,mode,language,title,body,source_language) VALUES (?, ?, 'zh-TW', ?, ?, 'multi') RETURNING id"
-    ).bind(story.id, mode, item.title, item.body).first();
-    saved.push({ id: editorial.id, mode, title: item.title, pieces: item.count });
+    const story = await db.prepare("INSERT INTO stories (title, summary, topic, status, first_seen_at, last_updated_at) VALUES (?, ?, ?, 'selected', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id").bind(item.title, item.title, mode).first();
+    const editorial = await db.prepare("INSERT INTO editorials (story_id,mode,language,title,body,source_language) VALUES (?, ?, 'zh-TW', ?, ?, 'multi') RETURNING id").bind(story.id, mode, item.title, item.body).first();
+    saved.push({ id: editorial.id, mode: mode, title: item.title, pieces: item.count });
   }
 
-  const bundle = await db.prepare(
-    "INSERT INTO editorials (story_id,mode,language,title,body,source_language) VALUES (NULL,'episode','zh-TW',?,?,'multi') RETURNING id"
-  ).bind("Global Discovery " + date, saved.map((item) => item.title).join("\n")).first();
-
+  const bundle = await db.prepare("INSERT INTO editorials (story_id,mode,language,title,body,source_language) VALUES (NULL,'episode','zh-TW',?,?,'multi') RETURNING id").bind("Global Discovery " + date, saved.map((item) => item.title).join("\n")).first();
   if (runId) {
-    await db.prepare(
-      "UPDATE daily_pipeline_runs SET candidate_count=?, selected_count=3, editorial_id=?, status='success', stage='complete', finished_at=CURRENT_TIMESTAMP WHERE id=?"
-    ).bind(rows.length, bundle.id, runId).run();
+    await db.prepare("UPDATE daily_pipeline_runs SET candidate_count=?, selected_count=3, editorial_id=?, status='success', stage='complete', finished_at=CURRENT_TIMESTAMP WHERE id=?").bind(rows.length, bundle.id, runId).run();
   }
   return { editorial_id: bundle.id, harvest: rows.length, items: saved };
 }

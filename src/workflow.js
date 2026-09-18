@@ -20,7 +20,7 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
       const sample = await this.env.DB.prepare(
         "SELECT body FROM editorials WHERE mode IN ('briefing','feature','culture') ORDER BY id DESC LIMIT 1"
       ).first();
-      if (sample && sample.body && !sample.body.includes("小篇 ") && !sample.body.includes("連結：")) {
+      if (sample && sample.body && sample.body.indexOf("小篇 ") === -1 && sample.body.indexOf("連結：") === -1) {
         return { status: "already_done", run_id: current.id, editorial_id: current.editorial_id };
       }
     }
@@ -30,7 +30,7 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
     if (current && current.status === "running" && !sameInstance) {
       return { status: "already_running", run_id: current.id, workflow_id: current.workflow_id };
     }
-    if (!runId || current.status === "success" || current.status === "failed") {
+    if (!current || current.status === "success" || current.status === "failed") {
       const run = await this.env.DB.prepare(
         "INSERT INTO daily_pipeline_runs (run_date, workflow_id, stage, status) VALUES (?, ?, 'created', 'running') RETURNING id"
       ).bind(runDate, event.instanceId).first();
