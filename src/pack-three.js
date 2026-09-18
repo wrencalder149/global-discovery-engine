@@ -7,7 +7,7 @@ function taiwanDate() {
 }
 
 const CULTURE_RE = /film|cinema|music|design|archiv|restor|literat|histor|philosoph|anthrop|museum|font|typeface|classic|album|exhibit|電影|音樂|設計|文學|歷史|哲學|人類學|修復|字體|展覽|美術|戲劇|古典/i;
-const NEWS_RE = /elect|war|nato|eu |un |president|minister|strike|ceasefire|economy|market|總理|總統|歐盟|選舉|停火|軍事|經濟/i;
+const NEWS_RE = /elect|war|nato|eu |un |president|minister|strike|ceasefire|economy|market|總理|總統|歐盟|選舉|停火|軍事|經潮/i;
 
 function bucketOf(row) {
   const text = `${row.title || ""} ${row.excerpt || ""} ${row.source_name || ""}`;
@@ -28,16 +28,17 @@ function uniqueRows(rows) {
   return out;
 }
 
-function section(row) {
+function smallPiece(index, row) {
   const excerpt = clean(row.excerpt || row.raw_content || "");
-  const lines = [
-    "● " + (row.title || "無標題"),
-    "來源：" + (row.source_name || "unknown") + (row.language ? "（" + row.language + "）" : "")
-  ];
-  if (row.url) lines.push("原文：" + row.url);
-  if (excerpt) lines.push(excerpt.slice(0, 900));
-  lines.push("");
-  return lines.join("\n");
+  return [
+    "--------",
+    "小篇 " + index,
+    row.title || "無標題",
+    "來源：" + (row.source_name || "unknown") + (row.language ? " ／ " + row.language : ""),
+    row.url ? ("連結：" + row.url) : "",
+    excerpt ? excerpt.slice(0, 900) : "目前只有標題，正文尚未取得。",
+    ""
+  ].join("\n");
 }
 
 function synthesize(mode, rows, date) {
@@ -47,22 +48,27 @@ function synthesize(mode, rows, date) {
     culture: "文化與知識"
   };
   const intros = {
-    briefing: "以下把今天收到、仍需背景的時事收成一篇，不是快訊堆疊。每則保留來源與摘要。",
-    feature: "以下把今天值得花時間的長材料與區域故事收成一篇。不追即時性，偏重脈絡。",
-    culture: "以下把今天收到的電影修復、音樂、文學、設計、歷史與思想收成一篇。"
+    briefing: "這一大篇收的是今天需要背景的時事。下面每一小篇是一則，不要當快訊版面刷。",
+    feature: "這一大篇收的是長材料與區域故事。下面每一小篇可以單獨看。",
+    culture: "這一大篇收的是電影修復、音樂、文學、設計、歷史與思想。下面每一小篇一則。"
   };
   const used = rows.slice(0, 40);
+  const pieces = used.map((row, index) => smallPiece(index + 1, row));
   const body = [
-    heads[mode] + "｜" + date,
+    heads[mode] + " ｜ " + date,
+    "共 " + used.length + " 小篇",
     "",
     intros[mode],
-    "本篇整理了 " + used.length + " 則來源。單一來源的說法先保留為「該媒體的陳述」。",
     "",
-    ...used.map(section),
-    "編輯說明：這是今日收割後的合集，不是單一家媒體的原文轉貼。"
+    ...pieces,
+    "--------",
+    "編輯說明：以上是今日收割合集。單一來源先作該媒體陳述，不當成已完全驗證。"
   ].join("\n");
-  const title = heads[mode] + "（" + used.length + " 則）｜" + date;
-  return { title, body, count: used.length };
+  return {
+    title: heads[mode] + "（" + used.length + " 小篇）｜" + date,
+    body,
+    count: used.length
+  };
 }
 
 export async function packThree(db, runId) {
@@ -80,8 +86,8 @@ export async function packThree(db, runId) {
   const buckets = { briefing: [], feature: [], culture: [] };
   for (const row of rows) buckets[bucketOf(row)].push(row);
   if (buckets.briefing.length < 5) buckets.briefing.push(...rows.filter((row) => !buckets.briefing.includes(row)).slice(0, 8));
-  if (buckets.culture.length < 5) buckets.culture.push(...rows.filter((row) => CULTURE_RE.test(`${row.title} ${row.source_name}`) || !buckets.culture.includes(row)).slice(0, 8));
-  if (buckets.feature.length < 5) buckets.feature.push(...rows.filter((row) => !buckets.feature.includes(row) && !buckets.briefing.includes(row)).slice(0, 12));
+  if (buckets.culture.length < 5) buckets.culture.push(...rows.filter((row) => !buckets.culture.includes(row)).slice(0, 8));
+  if (buckets.feature.length < 5) buckets.feature.push(...rows.filter((row) => !buckets.feature.includes(row)).slice(0, 12));
 
   const date = taiwanDate();
   const packed = {
@@ -96,8 +102,7 @@ export async function packThree(db, runId) {
     const story = await db.prepare(
       "INSERT INTO stories (title, summary, topic, status, first_seen_at, last_updated_at) VALUES (?, ?, ?, 'selected', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id"
     ).bind(item.title, item.title, mode).first();
-    const sourceRows = buckets[mode].slice(0, 40);
-    for (const row of sourceRows) {
+    for (const row of buckets[mode].slice(0, 40)) {
       await db.prepare(
         "INSERT OR IGNORE INTO article_stories (article_id, story_id, relation_type) VALUES (?, ?, 'primary')"
       ).bind(row.id, story.id).run();
@@ -105,7 +110,7 @@ export async function packThree(db, runId) {
     const editorial = await db.prepare(
       "INSERT INTO editorials (story_id,mode,language,title,body,source_language) VALUES (?, ?, 'zh-TW', ?, ?, 'multi') RETURNING id"
     ).bind(story.id, mode, item.title, item.body).first();
-    saved.push({ id: editorial.id, mode, title: item.title, sources: sourceRows.length });
+    saved.push({ id: editorial.id, mode, title: item.title, pieces: item.count });
   }
 
   const bundle = await db.prepare(
@@ -115,7 +120,7 @@ export async function packThree(db, runId) {
   if (runId) {
     await db.prepare(
       "UPDATE daily_pipeline_runs SET candidate_count=?, selected_count=?, editorial_id=?, status='success', stage='complete', finished_at=CURRENT_TIMESTAMP WHERE id=?"
-    ).bind(rows.length, saved.reduce((n, item) => n + item.sources, 0), bundle.id, runId).run();
+    ).bind(rows.length, saved.reduce((n, item) => n + item.pieces, 0), bundle.id, runId).run();
   }
 
   return { editorial_id: bundle.id, harvest: rows.length, items: saved };
