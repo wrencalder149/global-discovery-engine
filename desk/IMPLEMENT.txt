@@ -1,0 +1,28 @@
+A) grokbot 每日 07:30（Asia/Taipei）執行步驟
+1. 讀 desk/PROTOCOL.txt、desk/ARTICLE_SPEC.txt、desk/METHOD.txt、desk/sources.yaml。
+2. 建立當日目錄 desk/editions/YYYY-MM-DD/（日期以執行當日為準）。
+3. PASS 1：抓 sources.yaml 全部 RSS，過濾 reject 清單，取標題與摘要，優先選 design／restoration／old film／literature／history／ideas／field reporting。
+4. 對通過篩選的標題，用 open_page 或同等抓頁工具讀全文，最多深讀 8–12 篇。
+5. 若 PASS 1 產出足夠可寫成完整文章的素材（feature／knowledge／culture 各至少可湊 1–2 篇達 1200 字骨架），直接進入寫作；否則進入 PASS 2。
+6. PASS 2：在相同語言範圍內，改抓不同站點（非 sources.yaml 列表內的同語系文化／設計／修復／歷史／思想類網站或已知可靠頁面），再深讀。
+7. 若仍不足，進入 PASS 3：回顧 desk/editions/ 更早日期的 notes.md 與未採用文章線索，或先前未寫完的素材，再深讀。
+8. 三輪後仍無可寫成完整文章的素材 → 該槽位保持空白，不補水。
+9. 先寫 notes.md（記錄讀過的來源、數字性質、單一來源標記）。
+10. 依 PROTOCOL 寫 briefing.md（6 則短文、可有背景）、feature.md（2 篇完整）、knowledge.md（2 篇完整）、culture.md（2 篇完整）。全文必須符合 ARTICLE_SPEC 七骨。
+11. 執行 python desk/build-feed.py 重建 desk/feed.xml（只納入非 stub、非「編譯未完成」、長度足夠的包）。
+12. 一次 commit 當日 editions 四檔 + feed.xml 至 main。
+
+B) 寫入的檔案
+desk/editions/YYYY-MM-DD/briefing.md
+desk/editions/YYYY-MM-DD/feature.md
+desk/editions/YYYY-MM-DD/knowledge.md
+desk/editions/YYYY-MM-DD/culture.md
+desk/editions/YYYY-MM-DD/notes.md
+desk/feed.xml
+
+C) PASS 2 與 PASS 3 實際怎麼找
+PASS 2：同一語言（zh-TW／zh-Hant、en、de、fr、es、id）內，離開 sources.yaml 已列站點，改找設計、電影修復、文學、歷史、思想類網站或已知可靠頁面（例如博物館、檔案館、獨立雜誌、大學期刊頁）。用關鍵字或已知可靠域名直接 open_page 讀全文，不依賴 RSS。
+PASS 3：打開 desk/editions/ 較早日期的 notes.md 與未採用文章線索，或先前因長度不足而未入 feed 的素材，重新深讀並補齊 ARTICLE_SPEC 骨架。不重新掃全網，只復用已見過的知識種子。
+
+D) 失敗規則
+任一 deep／knowledge／culture 槽位若讀不完原文或寫不滿 ARTICLE_SPEC 最低骨架（含 1200 字級完整文章），該槽位不寫入 feed、不補水、不放導言或「入口」冒充成品。三輪獵取後仍空 → 允許空白。briefing 可短，但不得用短條充當深度包。
