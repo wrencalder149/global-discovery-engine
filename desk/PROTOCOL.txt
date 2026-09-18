@@ -1,11 +1,18 @@
-Daily paper, not a single essay.
+Daily paper volume — do not shrink this.
 
-THREE PACKS every day:
-1) briefing.md — 4 to 6 short items with context. Briefing is allowed here only.
-2) feature.md — TWO complete reported articles. Each 1200+ Chinese characters. Not teasers.
-3) culture.md — TWO complete reported articles or essays. Each 1200+ Chinese characters.
+A normal compact daily the reader can open:
+- 6 briefing items (short, with context)
+- 2 complete deep reports
+- 2 complete knowledge reports (新知: science, ideas, research)
+- 2 complete culture reports (restoration, old film, literature, design, history, music)
+Total: 12 pieces. Not 1.
 
-A pack with only one short item is not a newspaper. Do not ship it.
-If a piece is unfinished, omit that piece; do not replace it with a teaser.
-Read full texts first. Translate/write into zh-TW last.
-No Marvel, box office, idols. No Workers AI writer. No URL dumps.
+Files:
+desk/editions/YYYY-MM-DD/briefing.md   6 items
+desk/editions/YYYY-MM-DD/feature.md    2 articles, 1200+ chars each
+desk/editions/YYYY-MM-DD/knowledge.md  2 articles, 1200+ chars each
+desk/editions/YYYY-MM-DD/culture.md    2 articles, 1200+ chars each
+desk/editions/YYYY-MM-DD/notes.md
+Rebuild desk/feed.xml with all four packs.
+
+Teasers are not articles. One lonely article is not a paper.
