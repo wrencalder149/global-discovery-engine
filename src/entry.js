@@ -11,7 +11,7 @@ import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
 
-const VERSION = "0.6.3";
+const VERSION = "0.6.4";
 const LIVE_WORKFLOW_STATES = new Set(["queued", "running", "waiting", "paused"]);
 
 function taiwanDate() {
@@ -73,7 +73,19 @@ async function recoverIfNeeded(env) {
   await ensureExtendedTables(env.DB);
   const run = await pipelineStatus(env.DB);
   const sample = await latestBody(env.DB);
-  if (run && run.status === "success" && !looksLikeDump(sample && sample.body)) {
+  const dump = looksLikeDump(sample && sample.body);
+
+  // If current packs are dumps or missing, try direct packThree first (avoids full recollect).
+  if (dump) {
+    try {
+      const packed = await packThree(env, run && run.id);
+      return { recovered_stale_run: true, new_workflow_id: null, packed };
+    } catch (err) {
+      // fall through to workflow
+    }
+  }
+
+  if (run && run.status === "success" && !dump) {
     return { recovered_stale_run: false, new_workflow_id: null };
   }
   const workflow = run ? await readWorkflow(env, run.workflow_id) : null;
@@ -99,7 +111,6 @@ export default {
     }
     if (url.pathname === "/rebuild") {
       await ensureExtendedTables(env.DB);
-      // Prefer structured fallback under Worker time limits; AI runs inside packThree when available.
       const packed = await packThree(env, null);
       return Response.json({ ok: true, version: VERSION, packed });
     }
