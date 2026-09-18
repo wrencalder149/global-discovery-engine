@@ -11,7 +11,7 @@ import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
 
-const VERSION = "0.6.2";
+const VERSION = "0.6.3";
 const LIVE_WORKFLOW_STATES = new Set(["queued", "running", "waiting", "paused"]);
 
 function taiwanDate() {
@@ -45,6 +45,7 @@ function looksLikeDump(body) {
   if (text.indexOf("小篇 ") >= 0) return true;
   if (text.indexOf("原文：") >= 0) return true;
   if (text.indexOf("今日先收到素材") >= 0) return true;
+  if (text.indexOf("用繁中說明來源與重點") >= 0) return true;
   const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
   if (cjk < 100) return true;
   return false;
@@ -98,6 +99,7 @@ export default {
     }
     if (url.pathname === "/rebuild") {
       await ensureExtendedTables(env.DB);
+      // Prefer structured fallback under Worker time limits; AI runs inside packThree when available.
       const packed = await packThree(env, null);
       return Response.json({ ok: true, version: VERSION, packed });
     }

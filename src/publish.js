@@ -19,23 +19,28 @@ function isDump(body) {
   if (!text || text.length < 120) return true;
   if (text.indexOf("小篇 ") >= 0) return true;
   if (text.indexOf("原文：") >= 0) return true;
+  if (text.indexOf("今日先收到素材") >= 0) return true;
+  if (text.indexOf("用繁中說明來源與重點") >= 0) return true;
   const linkCount = (text.match(/https?:\/\//g) || []).length;
   if (linkCount >= 8) return true;
   if (linkCount >= 3) {
     const firstLink = text.indexOf("http");
-    if (firstLink >= 0 && firstLink < text.length * 0.55) return true;
+    if (firstLink >= 0 && firstLink < text.length * 0.5) return true;
   }
   const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
-  if (cjk < 100) return true;
-  const early = text.slice(0, 600);
-  if (/●\s*[A-Za-zÀ-ÿ]{12,}/.test(early) && cjk < 200) return true;
+  if (cjk < 120) return true;
+  // reject numbered foreign-title dumps
+  const early = text.slice(0, 900);
+  const foreignTitles = (early.match(/\d+\.\s*[A-Za-zÀ-ÿ][^\n]{20,}/g) || []).length;
+  if (foreignTitles >= 2 && cjk < 280) return true;
+  if (/●\s*[A-Za-zÀ-ÿ]{10,}/.test(early) && cjk < 220) return true;
   return false;
 }
 
 async function latestPacks(db) {
   const rows = await db
     .prepare(
-      "SELECT id,mode,title,body,created_at FROM editorials WHERE mode IN ('briefing','feature','culture') ORDER BY id DESC LIMIT 60"
+      "SELECT id,mode,title,body,created_at FROM editorials WHERE mode IN ('briefing','feature','culture') ORDER BY id DESC LIMIT 80"
     )
     .all();
   const picked = {};
@@ -132,7 +137,7 @@ export async function healthResponse(db) {
       id: row.id,
       mode: row.mode,
       title: row.title,
-      body_preview: String(row.body || "").slice(0, 120)
+      body_preview: String(row.body || "").slice(0, 140)
     })),
     runs: pipeline.results
   });
