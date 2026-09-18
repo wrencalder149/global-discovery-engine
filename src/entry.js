@@ -28,7 +28,7 @@ function isStale(run) {
 async function pipelineStatus(db) {
   const runDate = taiwanDate();
   const row = await db.prepare(
-    "SELECT id,run_date,status,started_at,finished_at,collection_run_id,workflow_id,candidate_count,selected_count,editorial_id,error FROM daily_pipeline_runs WHERE run_date=? ORDER BY id DESC LIMIT 1"
+    "SELECT id,run_date,status,stage,started_at,finished_at,collection_run_id,workflow_id,candidate_count,selected_count,editorial_id,error FROM daily_pipeline_runs WHERE run_date=? ORDER BY id DESC LIMIT 1"
   ).bind(runDate).first();
   return row || null;
 }
@@ -56,7 +56,7 @@ export default {
           return Response.json({
             name: "Global Discovery Engine",
             status: "online",
-            version: "0.3.3",
+            version: "0.3.4",
             pipeline: {
               status: "started",
               workflow_id: instance.id,
@@ -69,7 +69,7 @@ export default {
         return Response.json({
           name: "Global Discovery Engine",
           status: "online",
-          version: "0.3.3",
+          version: "0.3.4",
           pipeline: current
         });
       }
@@ -101,6 +101,23 @@ export default {
       if (url.pathname === "/status") {
         let pipeline = await pipelineStatus(env.DB);
 
+        if (pipeline?.status === "running" && !pipeline.workflow_id) {
+          await env.DB.prepare(
+            "UPDATE daily_pipeline_runs SET status='failed', stage='recovered', error='legacy run without Workflow instance ID', finished_at=CURRENT_TIMESTAMP WHERE id=?"
+          ).bind(pipeline.id).run();
+
+          const instance = await startWorkflow(env);
+          pipeline = await pipelineStatus(env.DB);
+
+          return Response.json({
+            ok: true,
+            version: "0.3.4",
+            recovered_legacy_run: true,
+            new_workflow_id: instance.id,
+            pipeline
+          });
+        }
+
         if (isStale(pipeline)) {
           await env.DB.prepare(
             "UPDATE daily_pipeline_runs SET status='failed', stage='recovered', error='stale run recovered by /status', finished_at=CURRENT_TIMESTAMP WHERE id=?"
@@ -111,7 +128,7 @@ export default {
 
           return Response.json({
             ok: true,
-            version: "0.3.3",
+            version: "0.3.4",
             recovered_stale_run: true,
             new_workflow_id: instance.id,
             pipeline
@@ -130,7 +147,7 @@ export default {
 
         return Response.json({
           ok: true,
-          version: "0.3.3",
+          version: "0.3.4",
           pipeline,
           workflow
         });
