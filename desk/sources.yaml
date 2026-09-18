@@ -1,0 +1,98 @@
+daily_title_sample:
+  zh: 8
+  en: 16
+  other: 16
+deep_read_cap: 12
+reject:
+  - marvel
+  - box office
+  - idol promo
+  - blackpink
+  - resident evil
+  - stock tape
+sources:
+  - name: 報導者
+    feed: https://www.twreporter.org/a/rss2.xml
+    lang: zh-TW
+    pack: [feature, briefing]
+    role: seed
+  - name: 紐約時報中文網
+    feed: https://cn.nytimes.com/rss/zh-hant.xml
+    lang: zh-Hant
+    pack: [briefing, feature]
+    role: seed
+  - name: 巷仔口社會學
+    feed: https://twstreetcorner.org/feed/
+    lang: zh-TW
+    pack: [feature]
+    role: seed
+  - name: 哲學新媒體
+    feed: https://philomedium.com/feed
+    lang: zh-TW
+    pack: [culture, feature]
+    role: seed
+  - name: 歷史學柑仔店
+    feed: https://clio.tw/feed
+    lang: zh-TW
+    pack: [culture]
+    role: seed
+  - name: 芭樂人類學
+    feed: https://guavanthropology.tw/feed
+    lang: zh-TW
+    pack: [culture, feature]
+    role: seed
+  - name: 端傳媒
+    feed: https://theinitium.com/newsfeed/
+    lang: zh-Hant
+    pack: [feature]
+    role: clue
+  - name: Aeon
+    feed: https://aeon.co/feed.rss
+    lang: en
+    pack: [feature, culture]
+    role: core
+  - name: Literary Hub
+    feed: https://lithub.com/feed/
+    lang: en
+    pack: [culture]
+    role: core
+  - name: Senses of Cinema
+    feed: https://www.sensesofcinema.com/feed/
+    lang: en
+    pack: [culture]
+    role: core
+  - name: It's Nice That
+    feed: https://www.itsnicethat.com/feed
+    lang: en
+    pack: [culture]
+    role: core
+  - name: Rest of World
+    feed: https://restofworld.org/feed/latest
+    lang: en
+    pack: [feature, briefing]
+    role: core
+  - name: Spektrum
+    feed: https://www.spektrum.de/alias/rss/spektrum-de-rss-feed/996406
+    lang: de
+    pack: [feature, culture]
+    role: core
+  - name: Le Monde Culture
+    feed: https://www.lemonde.fr/culture/rss_full.xml
+    lang: fr
+    pack: [culture]
+    role: core
+  - name: Revista Anfibia
+    feed: https://www.revistaanfibia.com/feed/
+    lang: es
+    pack: [feature]
+    role: core
+  - name: El Pais Cultura
+    feed: https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/section/cultura/portada
+    lang: es
+    pack: [culture, feature]
+    role: core
+  - name: Tempo
+    feed: https://rss.tempo.co/
+    lang: id
+    pack: [briefing, feature]
+    role: core

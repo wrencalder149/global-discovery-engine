@@ -1,0 +1,16 @@
+Grokbot protocol for wrencalder149/global-discovery-engine desk/
+
+Goal: three readable Taiwan Traditional Chinese newspaper packs per day.
+Repo: wrencalder149/global-discovery-engine
+Subscribe later via desk/feed.xml
+
+Every run:
+1. Read desk/sources.yaml and latest desk/editions/*.
+2. Fetch RSS titles from many sources. Reject marvel, box office, idols, stock tape.
+3. Pick candidates for briefing / feature / culture.
+4. Open 8-12 full articles. If paywall, mark as clue only.
+5. Fact-check hard facts only.
+6. Write desk/editions/YYYY-MM-DD/briefing.md feature.md culture.md notes.md in zh-TW.
+7. Run python desk/build-feed.py and commit feed plus edition files to main.
+8. Never publish "AI 編譯未完成" or raw URL dumps.
+9. If a pack is not newspaper-quality, do not include it in feed.xml.
