@@ -19,7 +19,17 @@ function responseText(result) {
   return "";
 }
 
+function isDump(text) {
+  const value = String(text || "");
+  if (value.indexOf("小篇 ") >= 0) return true;
+  if (value.indexOf("原文：") >= 0) return true;
+  if (value.indexOf("連結：") >= 0) return true;
+  if ((value.match(/https?:\/\//g) || []).length >= 4) return true;
+  return false;
+}
+
 function bucketOf(row) {
+  if (/gdelt/i.test(row.source_name || "")) return null;
   const text = (row.title || "") + " " + (row.excerpt || "") + " " + (row.source_name || "");
   if (REJECT_RE.test(text)) return null;
   if (CULTURE_RE.test(text)) return "culture";
@@ -41,61 +51,42 @@ function uniqueRows(rows) {
 
 const HEADS = { briefing: "今日簡報", feature: "深度發現", culture: "文化與知識" };
 
-function compactRows(rows, limit) {
-  return rows.slice(0, limit).map((row) => ({
+async function writePack(env, mode, rows, date) {
+  const items = rows.slice(0, 8).map((row) => ({
     title: row.title,
     source: row.source_name,
     language: row.language || "",
-    excerpt: clean(row.excerpt || row.raw_content || "").slice(0, 280),
-    url: row.url || ""
+    excerpt: clean(row.excerpt || row.raw_content || "").slice(0, 220)
   }));
-}
-
-async function writePack(env, mode, rows, date) {
-  const items = compactRows(rows, 10);
-  const system = "你是台灣繁體中文編輯。把素材寫成一篇「" + HEADS[mode] + "」匯整。不要貼原文標題堂，不要以網址當主文。每則用繁中寫標題與 80 到 160 字背景。原文不是中文就譬成繁中。單一來源寫目前僅見此來源。連結只能放最後一行。直接輸出正文。";
-
-  if (env.AI && items.length) {
-    try {
-      const result = await env.AI.run(TEXT_MODEL, {
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: JSON.stringify({ date: date, mode: mode, items: items }).slice(0, 9000) }
-        ],
-        max_completion_tokens: 2200,
-        temperature: 0.2
-      });
-      const text = responseText(result).trim();
-      if (text && text.indexOf("小篇 ") === -1 && text.length > 200) {
-        return { title: HEADS[mode] + "｜" + date, body: text, count: items.length };
-      }
-    } catch (error) {}
-  }
-
-  const lines = [HEADS[mode] + " ｜ " + date, "今日先收到素材，用繁中說明來源與重點。", ""];
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    lines.push((i + 1) + ". " + (item.title || "無標題"));
-    lines.push("來源：" + (item.source || "unknown") + "（目前僅見此來源）");
-    lines.push(item.excerpt || "此則尚無足夠正文可整理。");
-    lines.push("");
-  }
-  return { title: HEADS[mode] + "｜" + date, body: lines.join("\n"), count: items.length };
+  if (!env.AI) throw new Error("Workers AI missing");
+  const system = "你是台灣繁體中文編輯。把素材寫成一篇「" + HEADS[mode] + "」匯整。全文必須是台灣繁體中文。把外文標題與摘要譬成繁中並補上背景。不要貼原文標題堂。不要貼網址。不要寫「原文：」。每則 80到160字。直接輸出正文。";
+  const result = await env.AI.run(TEXT_MODEL, {
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: JSON.stringify({ date: date, mode: mode, items: items }).slice(0, 7000) }
+    ],
+    max_completion_tokens: 2200,
+    temperature: 0.2
+  });
+  const text = responseText(result).trim();
+  if (!text || text.length < 240 || isDump(text)) throw new Error("AI pack for " + mode + " was not translated");
+  return { title: HEADS[mode] + "｜" + date, body: text, count: items.length };
 }
 
 export async function packThree(env, runId) {
   const db = env.DB;
   const result = await db.prepare("SELECT a.id, a.title, a.url, a.excerpt, a.raw_content, a.language, s.name AS source_name, s.source_type, s.region FROM articles a JOIN sources s ON s.id = a.source_id ORDER BY a.id DESC LIMIT 180").all();
   const rows = uniqueRows(result.results || []).filter((row) => bucketOf(row));
-  if (!rows.length) throw new Error("No collected articles to synthesize");
+  if (rows.length < 6) throw new Error("Not enough non-GDELT articles to write packs");
 
   const buckets = { briefing: [], feature: [], culture: [] };
   for (const row of rows) {
     const bucket = bucketOf(row);
     if (bucket) buckets[bucket].push(row);
   }
-  if (buckets.briefing.length < 4) buckets.briefing.push.apply(buckets.briefing, rows.slice(0, 6));
-  if (buckets.feature.length < 4) buckets.feature.push.apply(buckets.feature, rows.slice(0, 8));
+  if (buckets.briefing.length < 3) buckets.briefing.push.apply(buckets.briefing, rows.slice(0, 5));
+  if (buckets.feature.length < 3) buckets.feature.push.apply(buckets.feature, rows.slice(0, 6));
+  if (buckets.culture.length < 3) buckets.culture.push.apply(buckets.culture, rows.filter((row) => CULTURE_RE.test((row.title || "") + (row.excerpt || ""))).slice(0, 5));
 
   const date = taiwanDate();
   const saved = [];
