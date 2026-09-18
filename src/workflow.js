@@ -64,8 +64,10 @@ function taiwanDate() {
 }
 
 async function staleCleanup(db) {
+  try { await db.prepare("ALTER TABLE daily_pipeline_runs ADD COLUMN workflow_id TEXT").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE daily_pipeline_runs ADD COLUMN stage TEXT").run(); } catch (_) {}
   await db.prepare(
-    "UPDATE daily_pipeline_runs SET status='failed', error='stale run recovered by Workflow', finished_at=CURRENT_TIMESTAMP WHERE status='running' AND started_at < datetime('now','-20 minutes')"
+    "UPDATE daily_pipeline_runs SET status='failed', error='stale run recovered by Workflow', finished_at=CURRENT_TIMESTAMP, stage='recovered' WHERE status='running' AND started_at < datetime('now','-20 minutes')"
   ).run();
   await db.prepare(
     "UPDATE collection_runs SET status='failed', error_json='[{\"stage\":\"recovery\",\"error\":\"stale run recovered by Workflow\"}]', finished_at=CURRENT_TIMESTAMP WHERE status='running' AND started_at < datetime('now','-20 minutes')"
@@ -383,8 +385,13 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
       "INSERT INTO daily_pipeline_runs (run_date) VALUES (?) RETURNING id"
     ).bind(runDate).first();
     const runId = run.id;
+    try {
+      await this.env.DB.prepare("UPDATE daily_pipeline_runs SET workflow_id=?, stage='created' WHERE id=?")
+        .bind(event.instanceId, runId).run();
+    } catch (_) {}
 
     try {
+      await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='collecting' WHERE id=?").bind(runId).run();
       const collection = await step.do("collect global source pool", {
         retries: { limit: 4, delay: "20 seconds", backoff: "exponential" }
       }, async () => {
@@ -395,6 +402,7 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
         "UPDATE daily_pipeline_runs SET collection_run_id=? WHERE id=?"
       ).bind(collection.run_id, runId).run();
 
+      await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='candidate_selection' WHERE id=?").bind(runId).run();
       const candidates = await step.do("prepare candidate pool", async () => {
         const rows = await getCandidates(this.env.DB);
         await this.env.DB.prepare(
@@ -404,26 +412,30 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
         return rows;
       });
 
+      await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='selecting_stories' WHERE id=?").bind(runId).run();
       const groups = await step.do("select stories", {
         retries: { limit: 3, delay: "15 seconds", backoff: "exponential" }
       }, async () => chooseGroups(this.env, candidates));
 
+      await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='researching' WHERE id=?").bind(runId).run();
       const dossiers = await step.do("research selected stories", {
         retries: { limit: 2, delay: "20 seconds", backoff: "exponential" }
       }, async () => buildDossiers(this.env, this.env.DB, groups, candidates));
 
       if (!dossiers.length) throw new Error("No research dossiers could be built");
 
+      await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='writing_episode' WHERE id=?").bind(runId).run();
       const episode = await step.do("write Traditional Chinese episode", {
         retries: { limit: 3, delay: "20 seconds", backoff: "exponential" }
       }, async () => generateEpisode(this.env, dossiers));
 
+      await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='saving_episode' WHERE id=?").bind(runId).run();
       return await step.do("save episode and claims", {
         retries: { limit: 3, delay: "20 seconds", backoff: "exponential" }
       }, async () => saveEpisode(this.env.DB, runId, candidates, episode));
     } catch (error) {
       await this.env.DB.prepare(
-        "UPDATE daily_pipeline_runs SET status='failed', error=?, finished_at=CURRENT_TIMESTAMP WHERE id=?"
+        "UPDATE daily_pipeline_runs SET status='failed', stage='failed', error=?, finished_at=CURRENT_TIMESTAMP WHERE id=?"
       ).bind(String(error), runId).run();
       throw error;
     }
