@@ -1,5 +1,5 @@
 import { WorkflowEntrypoint } from "cloudflare:workers";
-import { ensureExtendedTables } from "./daily.js";
+import { ensureExtendedTables } from "./tables.js";
 import { runCollection } from "./index.js";
 
 const TEXT_MODEL = "@cf/zai-org/glm-4.7-flash";
@@ -24,11 +24,12 @@ function responseText(result) {
   if (result.choices?.[0]?.message?.content) return result.choices[0].message.content;
   if (result.choices?.[0]?.text) return result.choices[0].text;
   if (typeof result.output_text === "string") return result.output_text;
+  if (typeof result.reasoning === "string" && result.reasoning.includes("{")) return result.reasoning;
   return "";
 }
 
 function parseJson(text) {
-  const raw = cleanText(text).replace(/^\`\`\`(?:json)?/i, "").replace(/\`\`\`$/i, "").trim();
+  const raw = cleanText(text).replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
   try {
     return JSON.parse(raw);
   } catch (_) {
@@ -47,7 +48,8 @@ async function aiCall(env, system, user, maxCompletionTokens) {
       { role: "user", content: user }
     ],
     max_completion_tokens: maxCompletionTokens,
-    temperature: 0.2
+    temperature: 0.2,
+    reasoning_effort: "low"
   });
   const text = responseText(result);
   if (!text) throw new Error("Workers AI returned no text");
@@ -67,10 +69,10 @@ async function staleCleanup(db) {
   try { await db.prepare("ALTER TABLE daily_pipeline_runs ADD COLUMN workflow_id TEXT").run(); } catch (_) {}
   try { await db.prepare("ALTER TABLE daily_pipeline_runs ADD COLUMN stage TEXT").run(); } catch (_) {}
   await db.prepare(
-    "UPDATE daily_pipeline_runs SET status='failed', error='stale run recovered by Workflow', finished_at=CURRENT_TIMESTAMP, stage='recovered' WHERE status='running' AND started_at < datetime('now','-20 minutes')"
+    "UPDATE daily_pipeline_runs SET status='failed', error='stale run recovered by Workflow', finished_at=CURRENT_TIMESTAMP, stage='recovered' WHERE status='running' AND started_at < datetime('now','-45 minutes')"
   ).run();
   await db.prepare(
-    "UPDATE collection_runs SET status='failed', error_json='[{\"stage\":\"recovery\",\"error\":\"stale run recovered by Workflow\"}]', finished_at=CURRENT_TIMESTAMP WHERE status='running' AND started_at < datetime('now','-20 minutes')"
+    "UPDATE collection_runs SET status='failed', error_json='[{\"stage\":\"recovery\",\"error\":\"stale run recovered by Workflow\"}]', finished_at=CURRENT_TIMESTAMP WHERE status='running' AND started_at < datetime('now','-45 minutes')"
   ).run();
 }
 
@@ -112,9 +114,14 @@ async function chooseGroups(env, articles) {
     originality: a.originality
   }));
 
-  const system = `你是全球資訊探索系統的選題引擎。從候選文章找出值得花時間了解的故事單位，而不是熱門新聞排行榜。兼顧世界重要性、資訊增量、獨特性、深度、好奇心、文化價值、地方性、證據潛力與意外性。避免單一國家、議題或來源壟斷；亞洲、非洲、拉丁美洲、中東、歐洲、北美都應有機會出現。文化、科學、設計、影像、音樂與政治經濟同等可被選入。不要因為文章熱門就自動入選。
-輸出只能是 JSON：{"groups":[{"article_ids":[1,2],"title":"...","topic":"...","why":"...","importance":0.0,"novelty":0.0,"uniqueness":0.0,"depth":0.0,"curiosity":0.0,"personal_fit":0.0,"serendipity":0.0}]}
-最多 8 組。article_ids 必須來自候選清單。`;
+  const system = [
+    "You are the story selection engine for a global discovery system.",
+    "Pick story units worth time, not a popularity ranking.",
+    "Balance importance, novelty, uniqueness, depth, curiosity, culture, locality and evidence potential.",
+    "Do not let one country, topic or source dominate.",
+    "Return JSON only: {\"groups\":[{\"article_ids\":[1,2],\"title\":\"...\",\"topic\":\"...\",\"why\":\"...\",\"importance\":0.0,\"novelty\":0.0,\"uniqueness\":0.0,\"depth\":0.0,\"curiosity\":0.0,\"personal_fit\":0.0,\"serendipity\":0.0}]}",
+    "At most 8 groups. article_ids must come from the candidate list."
+  ].join(" ");
 
   const output = parseJson(await aiCall(env, system, JSON.stringify({ articles: compact }), 2400));
   const validIds = new Set(articles.map((a) => a.id));
@@ -142,7 +149,9 @@ async function fetchArticleText(env, article) {
   }
 
   const html = await response.text();
-  if (!env.AI?.toMarkdown) throw new Error("Workers AI Markdown Conversion is not available");
+  if (!env.AI || typeof env.AI.toMarkdown !== "function") {
+    throw new Error("Workers AI Markdown Conversion is not available");
+  }
 
   const converted = await env.AI.toMarkdown(
     {
@@ -226,18 +235,15 @@ async function buildDossiers(env, db, groups, articles) {
 
 async function generateEpisode(env, dossiers) {
   const research = JSON.stringify(dossiers).slice(0, MAX_DOSSIER_TEXT);
-
-  const system = `你是台灣繁體中文的全球資訊 Podcast 主編。根據研究資料製作一天一集、內容密度高但不是流水帳的節目。
-嚴格要求：
-1. 只能使用提供的資料，不得捏造人物、日期、數字、事件或因果關係。
-2. 明確區分已確認事實、來源聲稱、分析與不確定性。
-3. 若只有單一來源，必須說明目前只有單一來源支持。
-4. 使用自然台灣繁體中文口語，不使用中國大陸慣用詞彙。
-5. 解釋為什麼值得知道，而不是只重述標題。
-6. 可涵蓋政治、戰爭、經濟、科學、環境、社會、文化、電影、音樂、設計、建築等，不強迫平均分配。
-7. 最多 8 個故事，總稿件約不超過 14000 字。
-8. 每個故事列出 claims，並提供 evidence_article_ids。
-輸出只能是 JSON：{"episode":{"title":"...","intro":"...","outro":"..."},"stories":[{"article_ids":[1,2],"title":"...","topic":"...","summary":"...","mode":"brief|feature|deep_dive","script":"...","claims":[{"claim_type":"FACT|QUOTE|STATISTIC|INTERPRETATION|CAUSAL_CLAIM|PREDICTION|ATTRIBUTION|HISTORICAL_CONTEXT","text":"...","status":"confirmed|supported|partially_supported|single_source|contested|unverified|refuted","confidence":0.0,"attribution":"...","evidence_article_ids":[1,2]}]}]}`;
+  const system = [
+    "You are a Traditional Chinese (Taiwan) global-information podcast editor.",
+    "Use only provided research. Never invent people, dates, numbers or causality.",
+    "Distinguish confirmed facts, source claims, analysis and uncertainty.",
+    "If there is only one source, say so explicitly.",
+    "Write natural Taiwan Traditional Chinese, not Mainland wording.",
+    "At most 8 stories. Keep the full script under about 14000 characters.",
+    "Return JSON only with episode and stories, including claims and evidence_article_ids."
+  ].join(" ");
 
   const output = parseJson(await aiCall(env, system, research, 8500));
   output.stories = Array.isArray(output.stories) ? output.stories : [];
@@ -269,13 +275,13 @@ async function saveEpisode(db, runId, selected, episode) {
       LIMIT 1
     `).bind(...ids, ids.length).first();
 
-    let storyId = existing?.id;
+    let storyId = existing && existing.id;
     if (!storyId) {
       const inserted = await db.prepare(`
         INSERT INTO stories (title, summary, topic, status, first_seen_at, last_updated_at)
         VALUES (?, ?, ?, 'selected', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id
-      `).bind(story.title || "未命名故事", story.summary || "", story.topic || "").first();
+      `).bind(story.title || "Untitled story", story.summary || "", story.topic || "").first();
       storyId = inserted.id;
     }
 
@@ -320,7 +326,7 @@ async function saveEpisode(db, runId, selected, episode) {
         `).bind(
           insertedClaim.id,
           articleId,
-          `source:${articleId}`,
+          "source:" + articleId,
           Number(claim.confidence || 0.5),
           claim.attribution || null
         ).run();
@@ -341,12 +347,12 @@ async function saveEpisode(db, runId, selected, episode) {
   }
 
   const body = [
-    episode.episode?.intro || "",
-    ...episode.stories.map((s) => `\n${s.title || "下一個故事"}\n\n${s.script || ""}`),
-    episode.episode?.outro || ""
+    (episode.episode && episode.episode.intro) || "",
+    ...episode.stories.map((s) => "\n" + (s.title || "Next story") + "\n\n" + (s.script || "")),
+    (episode.episode && episode.episode.outro) || ""
   ].join("\n").trim().slice(0, MAX_EPISODE_CHARS);
 
-  const title = episode.episode?.title || `Global Discovery ${taiwanDate()}`;
+  const title = (episode.episode && episode.episode.title) || ("Global Discovery " + taiwanDate());
   const editorial = await db.prepare(`
     INSERT INTO editorials (story_id,mode,language,title,body,source_language)
     VALUES (NULL,'episode','zh-TW',?,?,'multi')
@@ -354,7 +360,7 @@ async function saveEpisode(db, runId, selected, episode) {
   `).bind(title, body).first();
 
   await db.prepare(
-    "UPDATE daily_pipeline_runs SET editorial_id=?, selected_count=?, status='success', finished_at=CURRENT_TIMESTAMP WHERE id=?"
+    "UPDATE daily_pipeline_runs SET editorial_id=?, selected_count=?, status='success', stage='complete', finished_at=CURRENT_TIMESTAMP WHERE id=?"
   ).bind(editorial.id, storyIds.length, runId).run();
 
   return { editorial_id: editorial.id, selected_count: storyIds.length, title };
@@ -362,40 +368,52 @@ async function saveEpisode(db, runId, selected, episode) {
 
 export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
-    const runDate = event?.payload?.run_date || taiwanDate();
+    const runDate = (event && event.payload && event.payload.run_date) || taiwanDate();
 
     await ensureExtendedTables(this.env.DB);
     await staleCleanup(this.env.DB);
 
     const current = await this.env.DB.prepare(`
-      SELECT id,editorial_id,status,started_at
+      SELECT id,editorial_id,status,started_at,workflow_id
       FROM daily_pipeline_runs
       WHERE run_date=? ORDER BY id DESC LIMIT 1
     `).bind(runDate).first();
 
-    if (current?.status === "success") {
+    if (current && current.status === "success") {
       return { status: "already_done", run_id: current.id, editorial_id: current.editorial_id };
     }
 
-    if (current?.status === "running") {
-      return { status: "already_running", run_id: current.id };
+    let runId = current && current.id;
+    const sameInstance = current && current.workflow_id && current.workflow_id === event.instanceId;
+
+    if (current && current.status === "running" && !sameInstance) {
+      return { status: "already_running", run_id: current.id, workflow_id: current.workflow_id };
     }
 
-    const run = await this.env.DB.prepare(
-      "INSERT INTO daily_pipeline_runs (run_date) VALUES (?) RETURNING id"
-    ).bind(runDate).first();
-    const runId = run.id;
-    try {
-      await this.env.DB.prepare("UPDATE daily_pipeline_runs SET workflow_id=?, stage='created' WHERE id=?")
-        .bind(event.instanceId, runId).run();
-    } catch (_) {}
+    if (!sameInstance) {
+      const run = await this.env.DB.prepare(
+        "INSERT INTO daily_pipeline_runs (run_date, workflow_id, stage, status) VALUES (?, ?, 'created', 'running') RETURNING id"
+      ).bind(runDate, event.instanceId).first();
+      runId = run.id;
+    } else {
+      await this.env.DB.prepare(
+        "UPDATE daily_pipeline_runs SET stage='resumed' WHERE id=?"
+      ).bind(runId).run();
+    }
 
     try {
       await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='collecting' WHERE id=?").bind(runId).run();
       const collection = await step.do("collect global source pool", {
         retries: { limit: 4, delay: "20 seconds", backoff: "exponential" }
       }, async () => {
-        return await runCollection(this.env.DB, "workflow");
+        const result = await runCollection(this.env.DB, "workflow");
+        return {
+          run_id: result.run_id,
+          status: result.status,
+          rss_inserted: result.rss_inserted,
+          gdelt_inserted: result.gdelt_inserted,
+          error_count: Array.isArray(result.errors) ? result.errors.length : 0
+        };
       });
 
       await this.env.DB.prepare(
@@ -409,7 +427,23 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
           "UPDATE daily_pipeline_runs SET candidate_count=? WHERE id=?"
         ).bind(rows.length, runId).run();
         if (!rows.length) throw new Error("No article candidates available");
-        return rows;
+        return rows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          url: row.url,
+          published_at: row.published_at,
+          excerpt: cleanText(row.excerpt || "").slice(0, 800),
+          raw_content: cleanText(row.raw_content || "").slice(0, 4000),
+          language: row.language,
+          country: row.country,
+          source_name: row.source_name,
+          region: row.region,
+          source_country: row.source_country,
+          reliability: row.reliability,
+          discovery_value: row.discovery_value,
+          depth: row.depth,
+          originality: row.originality
+        }));
       });
 
       await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='selecting_stories' WHERE id=?").bind(runId).run();
@@ -420,7 +454,20 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
       await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='researching' WHERE id=?").bind(runId).run();
       const dossiers = await step.do("research selected stories", {
         retries: { limit: 2, delay: "20 seconds", backoff: "exponential" }
-      }, async () => buildDossiers(this.env, this.env.DB, groups, candidates));
+      }, async () => {
+        const built = await buildDossiers(this.env, this.env.DB, groups, candidates);
+        return built.map((item) => ({
+          ...item,
+          primary: {
+            ...item.primary,
+            text: cleanText(item.primary && item.primary.text).slice(0, 8000)
+          },
+          supporting: (item.supporting || []).map((s) => ({
+            ...s,
+            text: cleanText(s.text).slice(0, 4000)
+          }))
+        }));
+      });
 
       if (!dossiers.length) throw new Error("No research dossiers could be built");
 

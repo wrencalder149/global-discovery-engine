@@ -1,10 +1,10 @@
 {
   "name": "global-discovery-engine",
   "private": true,
-  "version": "0.3.5",
+  "version": "0.3.6",
   "scripts": {
     "deploy": "wrangler deploy",
-    "test": "node --check src/index.js && node --check src/entry.js && node --check src/daily.js && node --check src/workflow.js && node tests/validate-config.mjs"
+    "test": "node --check src/index.js && node --check src/entry.js && node --check src/daily.js && node --check src/workflow.js && node --check src/publish.js && node --check src/tables.js && node tests/validate-config.mjs"
   },
   "devDependencies": {
     "wrangler": "4.133.0"
