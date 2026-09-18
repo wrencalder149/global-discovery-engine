@@ -1,0 +1,29 @@
+GOAL: deliver knowledge. Empty only after three hunt passes.
+
+PASS 1 seed RSS in sources.yaml
+PASS 2 extra hunt list (same languages, different sites)
+PASS 3 unused old notes / earlier unused articles
+Reject: marvel, box office, idols, stock tape, duplicate world wires
+Keep: design, restoration, old film, literature, history, ideas, field reporting
+
+After each pass, deep-read up to 8 texts.
+If still nothing interesting, next pass.
+After pass 3 still nothing, that slot stays empty. No padding.
+
+WRITE TEMPLATES
+Brief item:
+- what happened
+- why it is not a naked headline
+- source nature
+
+Full article:
+1 what it is
+2 the object or mechanism
+3 time depth
+4 numbers and whether official/estimate/disputed
+5 named people/institutions
+6 disagreement
+7 limit of knowledge
+
+OUTPUT desk/editions/YYYY-MM-DD/*.md then desk/feed.xml
+TOOLS: GitHub + grokbot only. No Workers AI writer. No new server.
