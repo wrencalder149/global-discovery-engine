@@ -56,7 +56,7 @@ export default {
           return Response.json({
             name: "Global Discovery Engine",
             status: "online",
-            version: "0.3.2",
+            version: "0.3.3",
             pipeline: {
               status: "started",
               workflow_id: instance.id,
@@ -69,7 +69,7 @@ export default {
         return Response.json({
           name: "Global Discovery Engine",
           status: "online",
-          version: "0.3.2",
+          version: "0.3.3",
           pipeline: current
         });
       }
@@ -99,7 +99,25 @@ export default {
       if (url.pathname === "/ai-health") return healthResponse(env.DB);
 
       if (url.pathname === "/status") {
-        const pipeline = await pipelineStatus(env.DB);
+        let pipeline = await pipelineStatus(env.DB);
+
+        if (isStale(pipeline)) {
+          await env.DB.prepare(
+            "UPDATE daily_pipeline_runs SET status='failed', stage='recovered', error='stale run recovered by /status', finished_at=CURRENT_TIMESTAMP WHERE id=?"
+          ).bind(pipeline.id).run();
+
+          const instance = await startWorkflow(env);
+          pipeline = await pipelineStatus(env.DB);
+
+          return Response.json({
+            ok: true,
+            version: "0.3.3",
+            recovered_stale_run: true,
+            new_workflow_id: instance.id,
+            pipeline
+          });
+        }
+
         let workflow = null;
         if (pipeline?.workflow_id) {
           try {
@@ -109,9 +127,10 @@ export default {
             workflow = { status: "unknown", error: String(error) };
           }
         }
+
         return Response.json({
           ok: true,
-          version: "0.3.2",
+          version: "0.3.3",
           pipeline,
           workflow
         });
