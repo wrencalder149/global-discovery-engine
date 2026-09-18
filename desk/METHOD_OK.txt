@@ -1,5 +1,4 @@
-METHOD confirmed feasible.
-GitHub + grokbot only.
+Agreed. METHOD feasible with GitHub + grokbot only.
 No change. Keep smaller.
-Three hunt passes then empty allowed.
-Knowledge purpose. No padding.
+Three hunt passes, empty allowed after pass 3.
+Knowledge only. No padding. No boring news.
