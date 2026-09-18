@@ -1,6 +1,5 @@
-import { BRIEFING_SOURCES, DISCOVERY_CORE, DISCOVERY_ROTATION } from "./discovery-sources.js";
+import { ZH_POOL, EN_POOL, OTHER_POOL, ZH_DAILY, EN_DAILY, OTHER_DAILY } from "./language-budget.js";
 
-const ROTATE_FETCH_CAP = 12;
 const BATCH_SIZE = 25;
 
 function clean(value) {
@@ -15,7 +14,9 @@ function getTag(xml, name) {
 }
 
 function getItems(xml) {
-  return [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map((match) => match[1]);
+  const itemBlocks = [...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)].map((m) => m[1]);
+  if (itemBlocks.length) return itemBlocks;
+  return [...xml.matchAll(/<entry(?:\s[^>]*)?>([\s\S]*?)<\/entry>/gi)].map((m) => m[1]);
 }
 
 function rotate(list, offset, limit) {
@@ -55,15 +56,15 @@ async function insertArticles(db, sourceId, items) {
 }
 
 async function collectRSS(db, source) {
-  const response = await fetch(source.feed_url, { headers: { "User-Agent": "GlobalDiscoveryEngine/0.5" } });
+  const response = await fetch(source.feed_url, { headers: { "User-Agent": "GlobalDiscoveryEngine/0.6" } });
   if (!response.ok) throw new Error(`RSS ${response.status}: ${source.feed_url}`);
   const xml = await response.text();
   const rawItems = getItems(xml);
   const items = rawItems.map((item) => ({
     title: getTag(item, "title"),
-    url: getTag(item, "link") || getTag(item, "guid"),
-    published_at: getTag(item, "pubDate") || getTag(item, "dc:date"),
-    excerpt: getTag(item, "description"),
+    url: getTag(item, "link") || getTag(item, "guid") || getTag(item, "id"),
+    published_at: getTag(item, "pubDate") || getTag(item, "dc:date") || getTag(item, "updated") || getTag(item, "published"),
+    excerpt: getTag(item, "description") || getTag(item, "summary"),
     language: source.language,
     country: source.country
   }));
@@ -72,7 +73,7 @@ async function collectRSS(db, source) {
 
 async function collectGdelt(db) {
   const sourceId = await ensureSource(db, {
-    name: "GDELT Global Radar",
+    name: "GDELT Discovery Radar",
     base_url: "https://www.gdeltproject.org/",
     feed_url: "https://api.gdeltproject.org/api/v2/doc/doc",
     language: "multi",
@@ -81,16 +82,16 @@ async function collectGdelt(db) {
     source_type: "aggregator"
   });
   const api = new URL("https://api.gdeltproject.org/api/v2/doc/doc");
-  api.searchParams.set("query", "(cinema OR literature OR music OR archaeology OR museum OR festival OR indigenous OR manuscript OR language OR conservation)");
+  api.searchParams.set("query", "(cinema OR literature OR design OR archaeology OR museum OR restoration OR archive OR philosophy)");
   api.searchParams.set("mode", "artlist");
   api.searchParams.set("format", "json");
-  api.searchParams.set("maxrecords", "80");
-  api.searchParams.set("timespan", "24h");
+  api.searchParams.set("maxrecords", "40");
+  api.searchParams.set("timespan", "7d");
   api.searchParams.set("sort", "datedesc");
-  let response = await fetch(api, { headers: { "User-Agent": "GlobalDiscoveryEngine/0.5" } });
+  let response = await fetch(api, { headers: { "User-Agent": "GlobalDiscoveryEngine/0.6" } });
   if (response.status === 429) {
     await sleep(5000);
-    response = await fetch(api, { headers: { "User-Agent": "GlobalDiscoveryEngine/0.5" } });
+    response = await fetch(api, { headers: { "User-Agent": "GlobalDiscoveryEngine/0.6" } });
   }
   if (!response.ok) throw new Error(`GDELT ${response.status}`);
   const data = await response.json();
@@ -109,9 +110,9 @@ async function collectGdelt(db) {
 async function sourcesForPhase(db, phase) {
   const totalRow = await db.prepare("SELECT COUNT(*) AS n FROM collection_runs").first();
   const n = Number(totalRow?.n || 0);
-  if (phase === "news") return BRIEFING_SOURCES;
-  if (phase === "culture") return DISCOVERY_CORE;
-  if (phase === "rotate") return rotate(DISCOVERY_ROTATION, n * 5, ROTATE_FETCH_CAP);
+  if (phase === "news") return rotate(ZH_POOL, n * 3, ZH_DAILY);
+  if (phase === "culture") return rotate(EN_POOL, n * 5, EN_DAILY);
+  if (phase === "rotate") return rotate(OTHER_POOL, n * 7, OTHER_DAILY);
   return [];
 }
 
