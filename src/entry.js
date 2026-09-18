@@ -11,22 +11,26 @@ import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
 
-const VERSION = "0.6.0";
+const VERSION = "0.6.1";
 const LIVE_WORKFLOW_STATES = new Set(["queued", "running", "waiting", "paused"]);
 
 function taiwanDate() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Taipei",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date());
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
 async function pipelineStatus(db) {
   return await db.prepare(
     "SELECT id,run_date,status,stage,started_at,finished_at,collection_run_id,workflow_id,candidate_count,selected_count,editorial_id,error FROM daily_pipeline_runs ORDER BY id DESC LIMIT 1"
   ).first();
+}
+
+async function latestBody(db) {
+  return await db.prepare("SELECT body FROM editorials WHERE mode IN ('briefing','feature','culture') ORDER BY id DESC LIMIT 1").first();
+}
+
+function looksLikeDump(body) {
+  const text = String(body || "");
+  return !text || text.indexOf("小篇 ") >= 0 || text.indexOf("連結：") >= 0;
 }
 
 async function readWorkflow(env, workflowId) {
@@ -41,8 +45,8 @@ async function readWorkflow(env, workflowId) {
 async function startWorkflow(env, reason) {
   const runDate = taiwanDate();
   const instance = await env.DAILY_DISCOVERY.create({
-    id: `${reason}-${runDate}-${crypto.randomUUID()}`,
-    params: { run_date: runDate, reason }
+    id: reason + "-" + runDate + "-" + crypto.randomUUID(),
+    params: { run_date: runDate, reason: reason }
   });
   return instance.id;
 }
@@ -50,9 +54,14 @@ async function startWorkflow(env, reason) {
 async function recoverIfNeeded(env) {
   await ensureExtendedTables(env.DB);
   const run = await pipelineStatus(env.DB);
-  if (run && run.status === "success") return { recovered_stale_run: false, new_workflow_id: null };
+  const sample = await latestBody(env.DB);
+  if (run && run.status === "success" && !looksLikeDump(sample && sample.body)) {
+    return { recovered_stale_run: false, new_workflow_id: null };
+  }
   const workflow = run ? await readWorkflow(env, run.workflow_id) : null;
-  if (workflow && LIVE_WORKFLOW_STATES.has(workflow.status)) return { recovered_stale_run: false, new_workflow_id: null };
+  if (workflow && LIVE_WORKFLOW_STATES.has(workflow.status)) {
+    return { recovered_stale_run: false, new_workflow_id: null };
+  }
   const workflow_id = await startWorkflow(env, run ? "recover" : "bootstrap");
   return { recovered_stale_run: true, new_workflow_id: workflow_id };
 }
@@ -70,7 +79,7 @@ export default {
     }
     if (url.pathname === "/rebuild") {
       await ensureExtendedTables(env.DB);
-      const packed = await packThree(env.DB, null);
+      const packed = await packThree(env, null);
       return Response.json({ ok: true, version: VERSION, packed });
     }
     if (url.pathname === "/run") {
