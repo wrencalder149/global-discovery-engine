@@ -66,11 +66,17 @@ function looksLikeGoodPack(text) {
   if (!text || text.length < 280) return false;
   if (text.indexOf("小篇 ") >= 0) return false;
   if (text.indexOf("原文：") >= 0) return false;
-  if (text.indexOf("連結：") >= 0 && text.indexOf("https://") < text.length - 400) return false;
   const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
   if (cjk < 180) return false;
-  if ((text.match(/https?:\/\//g) || []).length >= 8) return false;
+  if ((text.match(/https?:\/\//g) || []).length >= 10) return false;
   return true;
+}
+
+function hasMostlyCjk(s) {
+  const t = String(s || "");
+  if (!t) return false;
+  const cjk = (t.match(/[\u4e00-\u9fff]/g) || []).join("").length;
+  return cjk >= Math.min(12, Math.floor(t.length * 0.35));
 }
 
 function buildFallback(mode, items, date) {
@@ -78,9 +84,9 @@ function buildFallback(mode, items, date) {
   lines.push(HEADS[mode] + "｜" + date);
   lines.push("");
   if (mode === "briefing") {
-    lines.push("以下為今日時事合集。每則以繁體中文整理重點與必要背景；單一來源已標註。連結集中於文末。");
+    lines.push("以下為今日時事合集。每則以繁體中文整理可核對重點與必要背景；單一來源已標註。連結集中於文末。");
   } else if (mode === "feature") {
-    lines.push("以下為深度與調查合集。每則保留可核對的重點，避免無根據推論。連結集中於文末。");
+    lines.push("以下為深度與調查合集。每則保留可核對重點，避免無根據推論。連結集中於文末。");
   } else {
     lines.push("以下為文化與知識合集（音樂、修復電影、文學、設計、歷史、人類學等）。排除商業票房與偶像宣傳。連結集中於文末。");
   }
@@ -90,17 +96,23 @@ function buildFallback(mode, items, date) {
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const n = i + 1;
-    const titleHint = item.title || "無標題素材";
-    lines.push("【" + n + "】" + titleHint.slice(0, 60));
+    const label = hasMostlyCjk(item.title)
+      ? item.title.slice(0, 48)
+      : "素材" + n + "（來源語言非中文，待完整編譯）";
+    lines.push("【" + n + "】" + label);
     lines.push("來源：" + (item.source || "unknown") + "（目前僅見此來源）");
     const excerpt = item.excerpt || "";
-    if (excerpt.length > 40) {
-      lines.push(excerpt.slice(0, 160) + (excerpt.length > 160 ? "…" : ""));
+    if (hasMostlyCjk(excerpt) && excerpt.length > 30) {
+      lines.push(excerpt.slice(0, 150) + (excerpt.length > 150 ? "…" : ""));
+    } else if (excerpt.length > 40) {
+      lines.push("原文摘要（尚未完整譯寫）：" + excerpt.slice(0, 100) + "…");
     } else {
       lines.push("此則尚無足夠正文可整理，僅保留來源線索。");
     }
     lines.push("");
-    if (item.url) links.push(n + ". " + item.url);
+    if (item.url) {
+      links.push(n + ". " + (item.title ? item.title.slice(0, 40) + " — " : "") + item.url);
+    }
   }
 
   if (links.length) {
@@ -164,9 +176,7 @@ async function writePack(env, mode, rows, date) {
           count: items.length
         };
       }
-    } catch (_) {
-      // fall through to structured fallback
-    }
+    } catch (_) {}
   }
 
   return buildFallback(mode, items, date);

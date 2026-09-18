@@ -16,24 +16,27 @@ function slotLabel(mode) {
 
 function isDump(body) {
   const text = String(body || "");
-  if (!text || text.length < 120) return true;
+  if (!text || text.length < 100) return true;
   if (text.indexOf("小篇 ") >= 0) return true;
   if (text.indexOf("原文：") >= 0) return true;
+  // old fallback markers that paste raw foreign titles as primary content
   if (text.indexOf("今日先收到素材") >= 0) return true;
   if (text.indexOf("用繁中說明來源與重點") >= 0) return true;
+
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
+  if (cjk < 80) return true;
+
+  // allow structured packs that put links only at the end
   const linkCount = (text.match(/https?:\/\//g) || []).length;
-  if (linkCount >= 8) return true;
   if (linkCount >= 3) {
     const firstLink = text.indexOf("http");
-    if (firstLink >= 0 && firstLink < text.length * 0.5) return true;
+    if (firstLink >= 0 && firstLink < Math.floor(text.length * 0.45)) return true;
   }
-  const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
-  if (cjk < 120) return true;
-  // reject numbered foreign-title dumps
-  const early = text.slice(0, 900);
-  const foreignTitles = (early.match(/\d+\.\s*[A-Za-zÀ-ÿ][^\n]{20,}/g) || []).length;
-  if (foreignTitles >= 2 && cjk < 280) return true;
-  if (/●\s*[A-Za-zÀ-ÿ]{10,}/.test(early) && cjk < 220) return true;
+  if (linkCount >= 12) return true;
+
+  // reject pure foreign-title stacks without Chinese framing
+  const early = text.slice(0, 500);
+  if (/●\s*[A-Za-zÀ-ÿ]{12,}/.test(early) && cjk < 150) return true;
   return false;
 }
 
@@ -137,7 +140,7 @@ export async function healthResponse(db) {
       id: row.id,
       mode: row.mode,
       title: row.title,
-      body_preview: String(row.body || "").slice(0, 140)
+      body_preview: String(row.body || "").slice(0, 160)
     })),
     runs: pipeline.results
   });

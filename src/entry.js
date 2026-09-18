@@ -11,7 +11,7 @@ import { GlobalDiscoveryWorkflow } from "./workflow.js";
 
 export { GlobalDiscoveryWorkflow };
 
-const VERSION = "0.6.4";
+const VERSION = "0.6.5";
 const LIVE_WORKFLOW_STATES = new Set(["queued", "running", "waiting", "paused"]);
 
 function taiwanDate() {
@@ -41,13 +41,13 @@ async function latestBody(db) {
 
 function looksLikeDump(body) {
   const text = String(body || "");
-  if (!text || text.length < 120) return true;
+  if (!text || text.length < 100) return true;
   if (text.indexOf("小篇 ") >= 0) return true;
   if (text.indexOf("原文：") >= 0) return true;
   if (text.indexOf("今日先收到素材") >= 0) return true;
   if (text.indexOf("用繁中說明來源與重點") >= 0) return true;
   const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
-  if (cjk < 100) return true;
+  if (cjk < 80) return true;
   return false;
 }
 
@@ -75,14 +75,11 @@ async function recoverIfNeeded(env) {
   const sample = await latestBody(env.DB);
   const dump = looksLikeDump(sample && sample.body);
 
-  // If current packs are dumps or missing, try direct packThree first (avoids full recollect).
   if (dump) {
     try {
       const packed = await packThree(env, run && run.id);
       return { recovered_stale_run: true, new_workflow_id: null, packed };
-    } catch (err) {
-      // fall through to workflow
-    }
+    } catch (_) {}
   }
 
   if (run && run.status === "success" && !dump) {
