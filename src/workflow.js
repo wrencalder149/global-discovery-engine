@@ -17,7 +17,12 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
     ).bind(runDate).first();
 
     if (current && current.status === "success") {
-      return { status: "already_done", run_id: current.id, editorial_id: current.editorial_id };
+      const sample = await this.env.DB.prepare(
+        "SELECT body FROM editorials WHERE mode IN ('briefing','feature','culture') ORDER BY id DESC LIMIT 1"
+      ).first();
+      if (sample && sample.body && !sample.body.includes("小篇 ") && !sample.body.includes("連結：")) {
+        return { status: "already_done", run_id: current.id, editorial_id: current.editorial_id };
+      }
     }
 
     const sameInstance = current && current.workflow_id === event.instanceId;
@@ -25,7 +30,7 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
     if (current && current.status === "running" && !sameInstance) {
       return { status: "already_running", run_id: current.id, workflow_id: current.workflow_id };
     }
-    if (!sameInstance) {
+    if (!runId || current.status === "success" || current.status === "failed") {
       const run = await this.env.DB.prepare(
         "INSERT INTO daily_pipeline_runs (run_date, workflow_id, stage, status) VALUES (?, ?, 'created', 'running') RETURNING id"
       ).bind(runDate, event.instanceId).first();
@@ -35,7 +40,7 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
     try {
       await runCollectionSteps(this.env, step, runId);
       await this.env.DB.prepare("UPDATE daily_pipeline_runs SET stage='writing_episode' WHERE id=?").bind(runId).run();
-      return await step.do("pack three text articles", async () => packThree(this.env.DB, runId));
+      return await step.do("pack three text articles", async () => packThree(this.env, runId));
     } catch (error) {
       await this.env.DB.prepare(
         "UPDATE daily_pipeline_runs SET status='failed', stage='failed', error=?, finished_at=CURRENT_TIMESTAMP WHERE id=?"
