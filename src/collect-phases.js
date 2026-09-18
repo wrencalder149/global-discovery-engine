@@ -1,38 +1,6 @@
-import { EXTRA_RSS_SOURCES, EXTRA_GOOGLE_RADARS } from "./source-catalog.js";
-import { CULTURE_RSS_SOURCES, CULTURE_GOOGLE_RADARS } from "./culture-sources.js";
+import { BRIEFING_SOURCES, DISCOVERY_CORE, DISCOVERY_ROTATION } from "./discovery-sources.js";
 
-const NEWS_SOURCES = [
-  { name: "BBC News - World", base_url: "https://www.bbc.com/news/world", feed_url: "https://feeds.bbci.co.uk/news/world/rss.xml", language: "en", country: "GB", region: "Europe", source_type: "news" },
-  { name: "Al Jazeera", base_url: "https://www.aljazeera.com/", feed_url: "https://www.aljazeera.com/xml/rss/all.xml", language: "en", country: "QA", region: "Middle East", source_type: "news" },
-  { name: "Deutsche Welle", base_url: "https://www.dw.com/", feed_url: "https://rss.dw.com/xml/rss-en-all", language: "en", country: "DE", region: "Europe", source_type: "news" },
-  { name: "Euronews", base_url: "https://www.euronews.com/", feed_url: "https://www.euronews.com/rss", language: "en", country: "EU", region: "Europe", source_type: "news" },
-  { name: "France 24", base_url: "https://www.france24.com/", feed_url: "https://www.france24.com/en/rss", language: "en", country: "FR", region: "Europe", source_type: "news" },
-  { name: "The Guardian - World", base_url: "https://www.theguardian.com/world", feed_url: "https://www.theguardian.com/world/rss", language: "en", country: "GB", region: "Europe", source_type: "news" },
-  { name: "New York Times - World", base_url: "https://www.nytimes.com/section/world", feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", language: "en", country: "US", region: "North America", source_type: "news" },
-  { name: "Times of India - World", base_url: "https://timesofindia.indiatimes.com/world", feed_url: "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms", language: "en", country: "IN", region: "Asia", source_type: "news" }
-];
-
-const RADARS = [
-  { name: "Google News Radar - geopolitics", query: "war OR conflict OR diplomacy OR sanctions OR geopolitics" },
-  { name: "Google News Radar - economy", query: "economy OR inflation OR recession OR trade OR interest rates" },
-  { name: "Google News Radar - science", query: "science OR research OR technology OR medicine OR space" },
-  { name: "Google News Radar - environment", query: "climate OR biodiversity OR pollution OR wildfire OR drought" },
-  { name: "Google News Radar - society", query: "migration OR education OR housing OR inequality OR protest" },
-  { name: "Google News Radar - culture", query: "film OR music OR art OR design OR architecture OR literature" },
-  ...EXTRA_GOOGLE_RADARS,
-  ...CULTURE_GOOGLE_RADARS
-].map((item) => ({
-  ...item,
-  base_url: "https://news.google.com/",
-  feed_url: `https://news.google.com/rss/search?q=${encodeURIComponent(item.query)}&hl=en-US&gl=US&ceid=US:en&when=1d`,
-  language: "en",
-  country: "multi",
-  region: "global",
-  source_type: "radar"
-}));
-
-const EXTRA_FETCH_CAP = 12;
-const RADAR_FETCH_CAP = 4;
+const ROTATE_FETCH_CAP = 12;
 const BATCH_SIZE = 25;
 
 function clean(value) {
@@ -113,7 +81,7 @@ async function collectGdelt(db) {
     source_type: "aggregator"
   });
   const api = new URL("https://api.gdeltproject.org/api/v2/doc/doc");
-  api.searchParams.set("query", "(diplomacy OR research OR cinema OR literature OR music OR archaeology OR climate OR technology)");
+  api.searchParams.set("query", "(cinema OR literature OR music OR archaeology OR museum OR festival OR indigenous OR manuscript OR language OR conservation)");
   api.searchParams.set("mode", "artlist");
   api.searchParams.set("format", "json");
   api.searchParams.set("maxrecords", "80");
@@ -141,9 +109,9 @@ async function collectGdelt(db) {
 async function sourcesForPhase(db, phase) {
   const totalRow = await db.prepare("SELECT COUNT(*) AS n FROM collection_runs").first();
   const n = Number(totalRow?.n || 0);
-  if (phase === "news") return NEWS_SOURCES;
-  if (phase === "culture") return CULTURE_RSS_SOURCES;
-  if (phase === "rotate") return [...rotate(RADARS, n * 3, RADAR_FETCH_CAP), ...rotate(EXTRA_RSS_SOURCES, n * 7, EXTRA_FETCH_CAP)];
+  if (phase === "news") return BRIEFING_SOURCES;
+  if (phase === "culture") return DISCOVERY_CORE;
+  if (phase === "rotate") return rotate(DISCOVERY_ROTATION, n * 5, ROTATE_FETCH_CAP);
   return [];
 }
 
