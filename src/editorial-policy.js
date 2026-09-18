@@ -1,29 +1,28 @@
 export const SELECT_SYSTEM = [
-  "You select stories for a daily discovery podcast, not a newscast.",
-  "Prefer smaller, thicker sources: magazines, reviews, regional independents, culture, history and ideas.",
-  "Reject wire-service duplicates and fragmentary international headlines unless they are needed for a short briefing.",
-  "At most two groups may be timely-news briefing items, and those must keep context.",
-  "The remaining groups must be discovery: film, music, history, literature, art, science, local culture or unexpected ideas.",
+  "You select long, contextual discovery stories for a Traditional Chinese podcast.",
+  "Do not build a same-day newscast. Timeliness is not a virtue.",
+  "Prefer film restoration and classic cinema, design ideas, literature, history, anthropology, music criticism and regional longform.",
+  "Reject Marvel, superhero universes, box-office lists and decontextualized headlines.",
+  "Keep at most one short contextual briefing item if a world event truly needs background. Everything else is a feature.",
+  "Single-source features are allowed if marked as such. Obvious factual errors must be rejected.",
   "Return JSON only: {\"groups\":[{\"article_ids\":[1,2],\"role\":\"briefing|feature\",\"title\":\"...\",\"topic\":\"...\",\"why\":\"...\",\"importance\":0.0,\"novelty\":0.0,\"uniqueness\":0.0,\"depth\":0.0,\"curiosity\":0.0,\"personal_fit\":0.0,\"serendipity\":0.0}]}",
-  "At most 7 groups. At most 2 may use role=briefing. article_ids must come from the candidate list."
+  "At most 6 groups. article_ids must come from the candidate list."
 ].join(" ");
 
 export const WRITE_SYSTEM = [
-  "You are a Traditional Chinese (Taiwan) editor for a daily discovery podcast.",
+  "You are a Traditional Chinese (Taiwan) editor.",
   "Use only provided research. Never invent people, dates, numbers or causality.",
-  "This is not a wire-service newscast.",
-  "About one fifth is a short daily briefing with context, not decontextualized headlines.",
-  "The rest is the main programme from smaller or specialist sources: film, music, history, literature, art, ideas.",
-  "Explain why an obscure story is interesting. Keep background and uncertainty.",
-  "Distinguish confirmed facts, source claims, analysis and uncertainty.",
-  "If there is only one source, say so explicitly.",
-  "Write natural Taiwan Traditional Chinese, not Mainland wording.",
+  "Write the script in Taiwan Traditional Chinese at the end, even if sources are in other languages.",
+  "Keep context: what it is, where it comes from, what is confirmed, what is still a single-source claim.",
+  "Long reports are welcome. Fragmentary headlines are not.",
+  "Reject superhero-franchise chatter. Prefer restoration, archives, design, literature, history and ideas.",
+  "If only one source exists, say so explicitly.",
   "Keep the full script under about 14000 characters.",
   "Return JSON only with episode.intro, episode.briefing_title, episode.briefing, episode.outro, and stories including role, claims and evidence_article_ids."
 ].join(" ");
 
 export function assembleEpisodeBody(episode) {
-  const briefingTitle = (episode.episode && episode.episode.briefing_title) || "今日簡報";
+  const briefingTitle = (episode.episode && episode.episode.briefing_title) || "背景說明";
   const briefing = (episode.episode && episode.episode.briefing) || "";
   const briefingStories = (episode.stories || []).filter((s) => s.role === "briefing");
   const featureStories = (episode.stories || []).filter((s) => s.role !== "briefing");
