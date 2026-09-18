@@ -1,16 +1,30 @@
-Grokbot protocol for wrencalder149/global-discovery-engine desk/
+World Reader desk — daily protocol
 
-Goal: three readable Taiwan Traditional Chinese newspaper packs per day.
-Repo: wrencalder149/global-discovery-engine
-Subscribe later via desk/feed.xml
+PACKS
+1) briefing = 簡報. Short is allowed. 3 to 5 items. Each item 200 to 400 Chinese characters. Context required. No headline stack.
+2) feature = 正式報導. NOT a teaser. 1 or 2 COMPLETE articles. Each 1200 to 2800 Chinese characters.
+3) culture = 正式報導或評論. 1 or 2 COMPLETE pieces. Same length. No Marvel, box office, idol promo.
 
-Every run:
-1. Read desk/sources.yaml and latest desk/editions/*.
-2. Fetch RSS titles from many sources. Reject marvel, box office, idols, stock tape.
-3. Pick candidates for briefing / feature / culture.
-4. Open 8-12 full articles. If paywall, mark as clue only.
-5. Fact-check hard facts only.
-6. Write desk/editions/YYYY-MM-DD/briefing.md feature.md culture.md notes.md in zh-TW.
-7. Run python desk/build-feed.py and commit feed plus edition files to main.
-8. Never publish "AI 編譯未完成" or raw URL dumps.
-9. If a pack is not newspaper-quality, do not include it in feed.xml.
+A COMPLETE ARTICLE MUST CONTAIN
+- opening that states what is happening and why it matters now
+- the object or conflict in concrete terms (who, where, number, institution)
+- background that stops the reader from receiving a naked event
+- what is confirmed, by which sources
+- what is still single-source or disputed
+- ending that does not invent a moral
+If a piece is only a lead plus 「目前僅見 XX」, it is a briefing item. Do not put it in feature or culture.
+
+METHOD
+Collect many titles. Deep-read 8 to 12 full texts. Take notes in original language first. Then write Traditional Chinese Taiwan.
+Paywall = clue, not fake article.
+Hard facts only: deaths, loan vs repatriation, institution names, numbers.
+
+OUTPUT FILES
+desk/editions/YYYY-MM-DD/briefing.md
+desk/editions/YYYY-MM-DD/feature.md
+desk/editions/YYYY-MM-DD/culture.md
+desk/editions/YYYY-MM-DD/notes.md
+Then rebuild desk/feed.xml and commit main.
+
+FAILURE RULE
+If feature or culture is still a briefing, do not publish those packs.

@@ -1,0 +1,23 @@
+What a complete readable article is
+
+Not: title + 80 words + source line.
+Not: the first paragraph of a wire.
+Yes: a piece a person can sit down and finish, and know more at the end than at the start.
+
+Minimum bones
+1. What happened, in the first short block.
+2. The scene or the mechanism (a museum room, a planning law, a glacier as a savings account).
+3. Time depth: when it left, when it returned, which year the plan started.
+4. Numbers with their nature: official, estimate, disputed.
+5. At least one named institution or person.
+6. The disagreement, if any.
+7. A last paragraph that states the limit of what we know.
+
+Deep pack shape
+- One main reported article (the day’s center of gravity).
+- Optionally a second shorter reported article, still complete.
+- A labeled 「入口」 is allowed only when the full text was not readable; never disguise an entrance as a finished story.
+
+Culture pack shape
+- Same as deep, but the object may be an idea, a restoration, a book, a film print, a design argument.
+- Still reported, not a list of album titles.
