@@ -7,6 +7,21 @@ function taiwanDate() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
+function looksLikeDump(body) {
+  const text = String(body || "");
+  if (!text || text.length < 100) return true;
+  if (text.indexOf("小篇 ") >= 0) return true;
+  if (text.indexOf("原文：") >= 0) return true;
+  if (text.indexOf("待完整編譯") >= 0) return true;
+  if (text.indexOf("原文摘要（尚未完整譯寫）") >= 0) return true;
+  if (text.indexOf("AI 編譯未完成") >= 0) return true;
+  if (text.indexOf("尚未完整譯寫") >= 0) return true;
+  if (text.indexOf("素材") >= 0 && text.indexOf("來源語言非中文") >= 0) return true;
+  const cjk = (text.match(/[\u4e00-\u9fff]/g) || []).join("").length;
+  if (cjk < 120) return true;
+  return false;
+}
+
 export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
     const runDate = (event && event.payload && event.payload.run_date) || taiwanDate();
@@ -20,7 +35,7 @@ export class GlobalDiscoveryWorkflow extends WorkflowEntrypoint {
       const sample = await this.env.DB.prepare(
         "SELECT body FROM editorials WHERE mode IN ('briefing','feature','culture') ORDER BY id DESC LIMIT 1"
       ).first();
-      if (sample && sample.body && sample.body.indexOf("小篇 ") === -1 && sample.body.indexOf("連結：") === -1) {
+      if (sample && sample.body && !looksLikeDump(sample.body)) {
         return { status: "already_done", run_id: current.id, editorial_id: current.editorial_id };
       }
     }
