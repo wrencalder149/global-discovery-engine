@@ -1,4 +1,5 @@
 import { EXTRA_RSS_SOURCES, EXTRA_GOOGLE_RADARS } from "./source-catalog.js";
+import { CULTURE_RSS_SOURCES, CULTURE_GOOGLE_RADARS } from "./culture-sources.js";
 
 const RSS_SOURCES = [
   {
@@ -82,7 +83,8 @@ const GOOGLE_RADAR_SOURCES = [
   { name: "Google News Radar - environment", query: "climate OR biodiversity OR pollution OR wildfire OR drought" },
   { name: "Google News Radar - society", query: "migration OR education OR housing OR inequality OR protest" },
   { name: "Google News Radar - culture", query: "film OR music OR art OR design OR architecture OR literature" },
-  ...EXTRA_GOOGLE_RADARS
+  ...EXTRA_GOOGLE_RADARS,
+  ...CULTURE_GOOGLE_RADARS
 ].map((item) => ({
   ...item,
   base_url: "https://news.google.com/",
@@ -101,7 +103,7 @@ const BATCH_SIZE = 25;
 const VERSION = "0.4.0";
 const EXTRA_BASE = 12;
 const EXTRA_PER_SUCCESSFUL_DAY = 8;
-const EXTRA_FETCH_CAP = 36;
+const EXTRA_FETCH_CAP = 24;
 
 function clean(value) {
   if (!value) return "";
@@ -277,7 +279,7 @@ async function runCollection(db, mode) {
   let gdeltItemsFound = 0;
   let gdeltInserted = 0;
 
-  for (const source of [...RSS_SOURCES, ...GOOGLE_RADAR_SOURCES, ...extras]) {
+  for (const source of [...RSS_SOURCES, ...CULTURE_RSS_SOURCES, ...GOOGLE_RADAR_SOURCES, ...extras]) {
     try {
       const result = await collectRSS(db, source);
       rssItemsFound += result.items_found;
